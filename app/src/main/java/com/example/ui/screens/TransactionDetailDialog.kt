@@ -9,10 +9,14 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Repeat
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -65,13 +69,28 @@ fun TransactionDetailDialog(
                         StatusCodeBadge(statusCode = transaction.statusCode)
                         Text(
                             text = "${transaction.responseTimeMs} ms",
-                            color = OnCyberSurfaceMuted,
+                            color = OnCyberCyan,
                             fontSize = 11.sp,
-                            fontFamily = FontFamily.Monospace
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(CyberCyan)
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
                         )
                     }
 
-                    Row {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        val context = androidx.compose.ui.platform.LocalContext.current
+                        IconButton(onClick = {
+                            val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                            val clip = android.content.ClipData.newPlainText("URL", transaction.url)
+                            clipboard.setPrimaryClip(clip)
+                            android.widget.Toast.makeText(context, "URL Copied to Clipboard", android.widget.Toast.LENGTH_SHORT).show()
+                        }) {
+                            Icon(Icons.Default.ContentCopy, contentDescription = "Copy URL", tint = CyberCyan, modifier = Modifier.size(18.dp))
+                        }
+
                         IconButton(onClick = {
                             onSendToRepeater(
                                 transaction.method,
@@ -81,22 +100,31 @@ fun TransactionDetailDialog(
                             )
                             onDismiss()
                         }) {
-                            Icon(Icons.Default.Repeat, contentDescription = "To Repeater", tint = NeonGreen)
+                            Icon(Icons.Default.Repeat, contentDescription = "To Repeater", tint = NeonGreen, modifier = Modifier.size(18.dp))
                         }
+
                         IconButton(onClick = onDismiss) {
-                            Icon(Icons.Default.Close, contentDescription = "Close", tint = WarningCrimson)
+                            Icon(Icons.Default.Close, contentDescription = "Close", tint = WarningCrimson, modifier = Modifier.size(20.dp))
                         }
                     }
                 }
 
-                // URL Display
-                Text(
-                    text = transaction.url,
-                    color = OnCyberDark,
-                    fontSize = 12.sp,
-                    fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.Bold
-                )
+                // URL Display Container
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(CyberDarkBg)
+                        .border(1.dp, CyberBorder, RoundedCornerShape(6.dp))
+                        .padding(8.dp)
+                ) {
+                    Text(
+                        text = transaction.url,
+                        color = OnCyberDark,
+                        fontSize = 12.sp,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
 
                 // Request/Response Tab Switcher
                 Row(
@@ -112,7 +140,10 @@ fun TransactionDetailDialog(
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(4.dp)
                     ) {
-                        Text("REQUEST DETAILS", fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "Req", modifier = Modifier.size(14.dp))
+                            Text("REQUEST", fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                        }
                     }
 
                     Button(
@@ -124,7 +155,10 @@ fun TransactionDetailDialog(
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(4.dp)
                     ) {
-                        Text("RESPONSE DETAILS", fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Resp", modifier = Modifier.size(14.dp))
+                            Text("RESPONSE", fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
 

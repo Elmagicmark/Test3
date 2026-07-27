@@ -8,6 +8,7 @@ import androidx.activity.viewModels
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -69,24 +70,13 @@ class MainActivity : ComponentActivity() {
                         TopAppBar(
                             title = {
                                 Column {
-                                    Text(
-                                        text = "SYSTEM PROTOCOL",
-                                        color = CyberCyan,
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        letterSpacing = 2.sp,
-                                        fontFamily = FontFamily.Monospace
-                                    )
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                    ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                         Text(
                                             text = "INTERCEPT",
                                             color = OnCyberDark,
                                             fontWeight = FontWeight.Black,
                                             fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
-                                            fontSize = 20.sp,
+                                            fontSize = 18.sp,
                                             letterSpacing = (-1).sp
                                         )
                                         Text(
@@ -94,9 +84,29 @@ class MainActivity : ComponentActivity() {
                                             color = CyberCyan,
                                             fontWeight = FontWeight.Black,
                                             fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
-                                            fontSize = 20.sp
+                                            fontSize = 18.sp
+                                        )
+                                        Text(
+                                            text = "PRO",
+                                            color = NeonGreen,
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            fontFamily = FontFamily.Monospace,
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(3.dp))
+                                                .background(NeonGreen.copy(alpha = 0.15f))
+                                                .border(0.5.dp, NeonGreen, RoundedCornerShape(3.dp))
+                                                .padding(horizontal = 4.dp, vertical = 1.dp)
                                         )
                                     }
+                                    Text(
+                                        text = "HTTP/HTTPS TRAFFIC SUITE",
+                                        color = OnCyberSurfaceMuted,
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        letterSpacing = 1.sp,
+                                        fontFamily = FontFamily.Monospace
+                                    )
                                 }
                             },
                             colors = TopAppBarDefaults.topAppBarColors(
@@ -104,21 +114,53 @@ class MainActivity : ComponentActivity() {
                                 titleContentColor = OnCyberDark
                             ),
                             actions = {
-                                Box(
-                                    modifier = Modifier
-                                        .padding(end = 12.dp)
-                                        .size(36.dp)
-                                        .clip(CircleShape)
-                                        .background(CyberCyan.copy(alpha = 0.08f))
-                                        .border(1.dp, CyberCyan.copy(alpha = 0.3f), CircleShape),
-                                    contentAlignment = Alignment.Center
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier.padding(end = 12.dp)
                                 ) {
+                                    // Proxy Listener Pill Badge
                                     Box(
                                         modifier = Modifier
-                                            .size(8.dp)
-                                            .clip(CircleShape)
-                                            .background(if (proxySettings.isProxyRunning) NeonGreen else WarningCrimson)
-                                    )
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .background(if (proxySettings.isProxyRunning) Color(0xFF003814) else Color(0xFF380000))
+                                            .border(1.dp, if (proxySettings.isProxyRunning) NeonGreen else WarningCrimson, RoundedCornerShape(12.dp))
+                                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(6.dp)
+                                                    .clip(CircleShape)
+                                                    .background(if (proxySettings.isProxyRunning) NeonGreen else WarningCrimson)
+                                            )
+                                            Text(
+                                                text = if (proxySettings.isProxyRunning) ":${proxySettings.port}" else "OFF",
+                                                color = if (proxySettings.isProxyRunning) NeonGreen else WarningCrimson,
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                fontFamily = FontFamily.Monospace
+                                            )
+                                        }
+                                    }
+
+                                    // Quick Intercept Toggle Badge Button
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .background(if (proxySettings.isInterceptEnabled) WarningCrimson else CyberSurfaceVariant)
+                                            .border(1.dp, if (proxySettings.isInterceptEnabled) WarningCrimson else CyberBorder, RoundedCornerShape(12.dp))
+                                            .clickable { mainViewModel.toggleIntercept(!proxySettings.isInterceptEnabled) }
+                                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                                    ) {
+                                        Text(
+                                            text = if (proxySettings.isInterceptEnabled) "INTERCEPT ON" else "PASSTHROUGH",
+                                            color = if (proxySettings.isInterceptEnabled) Color.White else CyberCyan,
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            fontFamily = FontFamily.Monospace
+                                        )
+                                    }
                                 }
                             }
                         )
@@ -143,27 +185,41 @@ class MainActivity : ComponentActivity() {
                                 val selected = currentRoute == item.route
                                 NavigationBarItem(
                                     icon = {
-                                        Box(
-                                            modifier = Modifier
-                                                .clip(CircleShape)
-                                                .background(if (selected) CyberCyan.copy(alpha = 0.15f) else Color.Transparent)
-                                                .padding(6.dp)
+                                        BadgedBox(
+                                            badge = {
+                                                if (item.route == NavRoutes.INTERCEPT && interceptedRequests.isNotEmpty()) {
+                                                    Badge(
+                                                        containerColor = WarningCrimson,
+                                                        contentColor = Color.White
+                                                    ) {
+                                                        Text("${interceptedRequests.size}", fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                                    }
+                                                }
+                                            }
                                         ) {
-                                            Icon(
-                                                imageVector = item.icon,
-                                                contentDescription = item.title,
-                                                tint = if (selected) CyberCyan else OnCyberSurfaceMuted,
-                                                modifier = Modifier.size(20.dp)
-                                            )
+                                            Box(
+                                                modifier = Modifier
+                                                    .clip(CircleShape)
+                                                    .background(if (selected) CyberCyan.copy(alpha = 0.15f) else Color.Transparent)
+                                                    .padding(4.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = item.icon,
+                                                    contentDescription = item.title,
+                                                    tint = if (selected) CyberCyan else OnCyberSurfaceMuted,
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                            }
                                         }
                                     },
                                     label = {
                                         Text(
                                             text = item.title.uppercase(),
-                                            fontSize = 9.sp,
+                                            fontSize = 8.sp,
                                             fontFamily = FontFamily.Monospace,
                                             fontWeight = FontWeight.Bold,
-                                            color = if (selected) CyberCyan else OnCyberSurfaceMuted
+                                            color = if (selected) CyberCyan else OnCyberSurfaceMuted,
+                                            maxLines = 1
                                         )
                                     },
                                     selected = selected,

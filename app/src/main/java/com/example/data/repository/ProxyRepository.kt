@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -174,9 +175,8 @@ class ProxyRepository(
         url: String,
         headersMap: Map<String, String>,
         bodyString: String
-    ): Pair<Int, String> {
-        val startTime = System.currentTimeMillis()
-        return try {
+    ): Pair<Int, String> = withContext(Dispatchers.IO) {
+        try {
             val reqBuilder = Request.Builder().url(url)
             headersMap.forEach { (k, v) ->
                 if (k.isNotBlank()) reqBuilder.addHeader(k, v)

@@ -8,8 +8,10 @@ import com.example.data.model.CertificateInfo
 import com.example.data.model.ProxySettings
 import com.example.data.model.ProxyStats
 import com.example.data.repository.ProxyRepository
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -43,9 +45,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun seedDefaultsIfEmpty() {
-        viewModelScope.launch {
-            // Seed initial sample HTTP logs if empty
-            db.httpTransactionDao().getAllTransactions().collect { list ->
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val list = db.httpTransactionDao().getAllTransactions().first()
                 if (list.isEmpty()) {
                     val sampleList = listOf(
                         HttpTransactionEntity(
@@ -95,11 +97,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     )
                     repository.saveTransactions(sampleList)
                 }
-            }
-        }
 
-        viewModelScope.launch {
-            db.repeaterDao().getAllTabs().collect { tabs ->
+                val tabs = db.repeaterDao().getAllTabs().first()
                 if (tabs.isEmpty()) {
                     repository.createRepeaterTab(
                         tabName = "Tab 1 (Auth)",
@@ -116,11 +115,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         body = "{\"query\":\"query { currentUser { id name roles permissions } }\"}"
                     )
                 }
-            }
-        }
 
-        viewModelScope.launch {
-            db.interceptedRequestDao().getAllIntercepted().collect { reqs ->
+                val reqs = db.interceptedRequestDao().getAllIntercepted().first()
                 if (reqs.isEmpty()) {
                     repository.addInterceptedRequest(
                         InterceptedRequestEntity(
@@ -131,25 +127,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         )
                     )
                 }
-            }
-        }
 
-        viewModelScope.launch {
-            db.targetScopeDao().getAllScopes().collect { scopes ->
+                val scopes = db.targetScopeDao().getAllScopes().first()
                 if (scopes.isEmpty()) {
                     repository.addTargetScope(".*\\.target-app\\.internal/.*", true)
                     repository.addTargetScope(".*\\.shop\\.internal/.*", true)
                     repository.addTargetScope(".*\\.analytics-tracker\\.net/.*", false)
                 }
-            }
-        }
 
-        viewModelScope.launch {
-            db.securityProjectDao().getAllProjects().collect { projects ->
+                val projects = db.securityProjectDao().getAllProjects().first()
                 if (projects.isEmpty()) {
                     repository.addSecurityProject("Default Workspace", "Primary assessment project workspace")
                     repository.addSecurityProject("Mobile App Audit", "Targeted security testing for Android API endpoints")
                 }
+            } catch (e: Exception) {
+                e.printStackTrace()
             }
         }
     }

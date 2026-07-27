@@ -33,14 +33,18 @@ class ProxyEngine {
         isRunning = true
         proxyJob = scope.launch(Dispatchers.IO) {
             try {
-                val bindAddr = if (settings.host == "0.0.0.0" || settings.host.isBlank()) {
+                val bindAddr = if (settings.host == "0.0.0.0" || settings.host == "127.0.0.1" || settings.host.isBlank() || settings.host.contains("0.0.0.0")) {
                     InetAddress.getByAddress(byteArrayOf(0, 0, 0, 0))
                 } else {
-                    InetAddress.getByName(settings.host)
+                    try {
+                        InetAddress.getByName(settings.host)
+                    } catch (_: Exception) {
+                        InetAddress.getByAddress(byteArrayOf(0, 0, 0, 0))
+                    }
                 }
 
-                serverSocket = ServerSocket(settings.port, 50, bindAddr)
-                Log.d("ProxyEngine", "Proxy Server started listening on ${settings.host}:${settings.port}")
+                serverSocket = ServerSocket(settings.port, 100, bindAddr)
+                Log.d("ProxyEngine", "Proxy Server started listening on 0.0.0.0 (All interfaces):${settings.port}")
 
                 val httpClient = buildOkHttpClient(settings)
 

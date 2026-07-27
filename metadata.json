@@ -1,0 +1,6 @@
+{
+  "name": "InterceptX",
+  "description": "High-tech HTTP/HTTPS traffic proxy inspector, request repeater workbench, and security analysis tool.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -126,7 +126,8 @@ fun DashboardScreen(
 
                     Button(
                         onClick = {
-                            android.widget.Toast.makeText(context, "Exported InterceptX_Root_CA.pem to Download folder", android.widget.Toast.LENGTH_SHORT).show()
+                            val result = com.example.util.CertificateManager.exportCertificateToDownloads(context)
+                            android.widget.Toast.makeText(context, result.second, android.widget.Toast.LENGTH_LONG).show()
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = NeonAmber, contentColor = Color.Black),
                         shape = RoundedCornerShape(6.dp),

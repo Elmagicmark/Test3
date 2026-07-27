@@ -3,6 +3,7 @@ package com.example.data.repository
 import com.example.data.local.*
 import com.example.data.model.ProxySettings
 import com.example.data.model.ProxyStats
+import com.example.proxy.ProxyEngine
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -14,6 +15,8 @@ import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import java.net.InetSocketAddress
+import java.net.Proxy
 import java.util.concurrent.TimeUnit
 
 class ProxyRepository(
@@ -29,7 +32,7 @@ class ProxyRepository(
     private val _proxySettings = MutableStateFlow(ProxySettings())
     val proxySettings: StateFlow<ProxySettings> = _proxySettings.asStateFlow()
 
-    private val _proxyStats = MutableStateFlow(ProxyStats(totalRequests = 142, interceptedRequests = 8, activeConnections = 3, bytesTransferred = 10485760L))
+    private val _proxyStats = MutableStateFlow(ProxyStats(totalRequests = 142, interceptedRequests = 8, activeConnections = 0, bytesTransferred = 10485760L))
     val proxyStats: StateFlow<ProxyStats> = _proxyStats.asStateFlow()
 
     val allTransactions: Flow<List<HttpTransactionEntity>> = transactionDao.getAllTransactions()
@@ -38,40 +41,74 @@ class ProxyRepository(
     val targetScopes: Flow<List<TargetScopeEntity>> = scopeDao.getAllScopes()
     val securityProjects: Flow<List<SecurityProjectEntity>> = projectDao.getAllProjects()
 
-    private val httpClient = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(15, TimeUnit.SECONDS)
-        .build()
+    private val proxyEngine = ProxyEngine()
 
     init {
         scope.launch(Dispatchers.IO) {
-            // Seed initial sample data if database is empty
             seedInitialDataIfEmpty()
         }
     }
 
     private suspend fun seedInitialDataIfEmpty() {
-        // We will seed default security project and default repeater tabs
         val currentProjects = db.securityProjectDao()
-        // If needed, seed initial items safely
     }
 
     fun toggleProxyServer(running: Boolean) {
-        _proxySettings.value = _proxySettings.value.copy(isProxyRunning = running)
+        val newSettings = _proxySettings.value.copy(isProxyRunning = running)
+        _proxySettings.value = newSettings
+
+        if (running) {
+            startProxyEngine(newSettings)
+        } else {
+            proxyEngine.stopProxy()
+            _proxyStats.value = _proxyStats.value.copy(activeConnections = 0)
+        }
     }
 
     fun toggleIntercept(intercept: Boolean) {
-        _proxySettings.value = _proxySettings.value.copy(isInterceptEnabled = intercept)
+        val newSettings = _proxySettings.value.copy(isInterceptEnabled = intercept)
+        _proxySettings.value = newSettings
+        if (newSettings.isProxyRunning) {
+            startProxyEngine(newSettings)
+        }
     }
 
     fun updateProxySettings(newSettings: ProxySettings) {
         _proxySettings.value = newSettings
+        if (newSettings.isProxyRunning) {
+            startProxyEngine(newSettings)
+        } else {
+            proxyEngine.stopProxy()
+            _proxyStats.value = _proxyStats.value.copy(activeConnections = 0)
+        }
+    }
+
+    private fun startProxyEngine(settings: ProxySettings) {
+        proxyEngine.startProxy(
+            settings = settings,
+            scope = scope,
+            onTransactionCaptured = { tx ->
+                scope.launch(Dispatchers.IO) {
+                    saveTransaction(tx)
+                }
+            },
+            onStatsUpdated = { bytes, connDelta ->
+                val curr = _proxyStats.value
+                val newActive = (curr.activeConnections + connDelta).coerceAtLeast(0)
+                _proxyStats.value = curr.copy(
+                    bytesTransferred = curr.bytesTransferred + bytes,
+                    activeConnections = newActive
+                )
+            }
+        )
     }
 
     suspend fun saveTransaction(transaction: HttpTransactionEntity): Long {
         val id = transactionDao.insertTransaction(transaction)
+        val isIntercepted = transaction.isIntercepted
         _proxyStats.value = _proxyStats.value.copy(
             totalRequests = _proxyStats.value.totalRequests + 1,
+            interceptedRequests = if (isIntercepted) _proxyStats.value.interceptedRequests + 1 else _proxyStats.value.interceptedRequests,
             bytesTransferred = _proxyStats.value.bytesTransferred + transaction.bytesTransferred
         )
         return id
@@ -177,6 +214,21 @@ class ProxyRepository(
         bodyString: String
     ): Pair<Int, String> = withContext(Dispatchers.IO) {
         try {
+            val settings = _proxySettings.value
+            val clientBuilder = OkHttpClient.Builder()
+                .connectTimeout(15, TimeUnit.SECONDS)
+                .readTimeout(15, TimeUnit.SECONDS)
+
+            if (settings.upstreamProxyEnabled && settings.upstreamProxyHost.isNotBlank()) {
+                val upstreamProxy = Proxy(
+                    Proxy.Type.HTTP,
+                    InetSocketAddress(settings.upstreamProxyHost, settings.upstreamProxyPort)
+                )
+                clientBuilder.proxy(upstreamProxy)
+            }
+
+            val client = clientBuilder.build()
+
             val reqBuilder = Request.Builder().url(url)
             headersMap.forEach { (k, v) ->
                 if (k.isNotBlank()) reqBuilder.addHeader(k, v)
@@ -191,7 +243,7 @@ class ProxyRepository(
             reqBuilder.method(method, reqBody)
             val request = reqBuilder.build()
 
-            httpClient.newCall(request).execute().use { response ->
+            client.newCall(request).execute().use { response ->
                 val code = response.code
                 val respBody = response.body?.string() ?: ""
                 Pair(code, respBody)

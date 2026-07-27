@@ -68,17 +68,33 @@ fun CertificatesScreen(
                         }
                     }
 
-                    Button(
-                        onClick = {
-                            Toast.makeText(context, "Exported InterceptX_Root_CA.pem to Storage", Toast.LENGTH_SHORT).show()
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = NeonAmber, contentColor = Color.Black),
-                        shape = RoundedCornerShape(4.dp),
-                        modifier = Modifier.testTag("export_ca_cert_button")
-                    ) {
-                        Icon(Icons.Default.FileDownload, contentDescription = "Export", modifier = Modifier.size(14.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("EXPORT CA (.PEM)", fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Button(
+                            onClick = {
+                                val result = com.example.util.CertificateManager.exportCertificateToDownloads(context)
+                                Toast.makeText(context, result.second, Toast.LENGTH_LONG).show()
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = NeonAmber, contentColor = Color.Black),
+                            shape = RoundedCornerShape(4.dp),
+                            modifier = Modifier.testTag("export_ca_cert_button")
+                        ) {
+                            Icon(Icons.Default.FileDownload, contentDescription = "Export", modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("EXPORT (.PEM)", fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                        }
+
+                        OutlinedButton(
+                            onClick = {
+                                com.example.util.CertificateManager.shareOrInstallCertificate(context)
+                            },
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = NeonAmber),
+                            shape = RoundedCornerShape(4.dp),
+                            modifier = Modifier.testTag("install_ca_cert_button")
+                        ) {
+                            Icon(Icons.Default.Share, contentDescription = "Install/Share", modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("INSTALL / SHARE", fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                        }
                     }
                 }
 

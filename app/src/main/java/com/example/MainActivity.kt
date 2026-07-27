@@ -264,7 +264,7 @@ class MainActivity : ComponentActivity() {
 
                         composable(NavRoutes.CERTS) {
                             CertificatesScreen(
-                                certificateInfo = mainViewModel.certificateInfo
+                                certificateInfo = com.example.util.CertificateManager.getCertificateDetails(androidx.compose.ui.platform.LocalContext.current)
                             )
                         }
 

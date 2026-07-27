@@ -173,11 +173,12 @@ class MainActivity : ComponentActivity() {
                         ) {
                             val items = listOf(
                                 NavigationItem("Dash", NavRoutes.DASHBOARD, Icons.Default.Dashboard),
+                                NavigationItem("Target", NavRoutes.TARGET_SITEMAP, Icons.Default.AccountTree),
                                 NavigationItem("Intercept", NavRoutes.INTERCEPT, Icons.Default.PauseCircle),
                                 NavigationItem("History", NavRoutes.HISTORY, Icons.Default.History),
                                 NavigationItem("Repeater", NavRoutes.REPEATER, Icons.Default.Repeat),
+                                NavigationItem("Decoder", NavRoutes.DECODER, Icons.Default.Code),
                                 NavigationItem("Composer", NavRoutes.COMPOSER, Icons.Default.Terminal),
-                                NavigationItem("Certs", NavRoutes.CERTS, Icons.Default.VpnKey),
                                 NavigationItem("Config", NavRoutes.SETTINGS, Icons.Default.Settings)
                             )
 
@@ -256,6 +257,27 @@ class MainActivity : ComponentActivity() {
                                 onToggleProxy = { mainViewModel.toggleProxyServer(it) },
                                 onNavigate = { target -> navController.navigate(target) },
                                 onSelectTransaction = { selectedDetailTransaction = it }
+                            )
+                        }
+
+                        composable(NavRoutes.TARGET_SITEMAP) {
+                            TargetSiteMapScreen(
+                                transactions = transactions,
+                                targetScopes = targetScopes,
+                                onSendToRepeater = { method, url, headers, body ->
+                                    mainViewModel.sendToRepeater(method, url, headers, body)
+                                    navController.navigate(NavRoutes.REPEATER)
+                                },
+                                onSelectTransaction = { selectedDetailTransaction = it }
+                            )
+                        }
+
+                        composable(NavRoutes.DECODER) {
+                            DecoderScreen(
+                                onSendToRepeater = { method, url ->
+                                    mainViewModel.sendToRepeater(method, url, "{}", "")
+                                    navController.navigate(NavRoutes.REPEATER)
+                                }
                             )
                         }
 
@@ -361,9 +383,11 @@ class MainActivity : ComponentActivity() {
 
 object NavRoutes {
     const val DASHBOARD = "dashboard"
+    const val TARGET_SITEMAP = "target_sitemap"
     const val INTERCEPT = "intercept"
     const val HISTORY = "history"
     const val REPEATER = "repeater"
+    const val DECODER = "decoder"
     const val COMPOSER = "composer"
     const val CERTS = "certs"
     const val PROJECTS_SCOPE = "projects_scope"

@@ -80,7 +80,7 @@ fun CertificatesScreen(
                         ) {
                             Icon(Icons.Default.FileDownload, contentDescription = "Export", modifier = Modifier.size(14.dp))
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("EXPORT (.PEM)", fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                            Text("EXPORT (.CRT & .PEM)", fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
                         }
 
                         OutlinedButton(

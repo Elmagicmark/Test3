@@ -207,12 +207,39 @@ fun DashboardScreen(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 QuickActionItem(
+                    label = "Target Map",
+                    icon = Icons.Default.AccountTree,
+                    color = PurpleNeon,
+                    modifier = Modifier.weight(1f),
+                    onClick = { onNavigate("target_sitemap") }
+                )
+                QuickActionItem(
+                    label = "Decoder",
+                    icon = Icons.Default.Code,
+                    color = NeonGreen,
+                    modifier = Modifier.weight(1f),
+                    onClick = { onNavigate("decoder") }
+                )
+                QuickActionItem(
                     label = "Intercept",
                     icon = Icons.Default.PauseCircle,
                     color = WarningCrimson,
                     modifier = Modifier.weight(1f),
                     onClick = { onNavigate("intercept") }
                 )
+                QuickActionItem(
+                    label = "Repeater",
+                    icon = Icons.Default.Repeat,
+                    color = CyberCyan,
+                    modifier = Modifier.weight(1f),
+                    onClick = { onNavigate("repeater") }
+                )
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 QuickActionItem(
                     label = "History",
                     icon = Icons.Default.History,
@@ -221,11 +248,11 @@ fun DashboardScreen(
                     onClick = { onNavigate("history") }
                 )
                 QuickActionItem(
-                    label = "Repeater",
-                    icon = Icons.Default.Repeat,
-                    color = NeonGreen,
+                    label = "Composer",
+                    icon = Icons.Default.Terminal,
+                    color = PurpleNeon,
                     modifier = Modifier.weight(1f),
-                    onClick = { onNavigate("repeater") }
+                    onClick = { onNavigate("composer") }
                 )
                 QuickActionItem(
                     label = "Certificates",
@@ -233,6 +260,13 @@ fun DashboardScreen(
                     color = NeonAmber,
                     modifier = Modifier.weight(1f),
                     onClick = { onNavigate("certs") }
+                )
+                QuickActionItem(
+                    label = "Scope",
+                    icon = Icons.Default.FolderSpecial,
+                    color = NeonGreen,
+                    modifier = Modifier.weight(1f),
+                    onClick = { onNavigate("projects_scope") }
                 )
             }
         }

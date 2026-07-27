@@ -1,6 +1,7 @@
 package com.example.ui.screens
 
 import android.widget.Toast
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -153,6 +154,44 @@ fun SettingsScreen(
                         onCheckedChange = { sslBypassEnabled = it },
                         colors = SwitchDefaults.colors(checkedThumbColor = WarningCrimson)
                     )
+                }
+            }
+        }
+
+        CyberCard(borderColor = PurpleNeon) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(Icons.Default.Settings, contentDescription = "FoxyProxy", tint = PurpleNeon)
+                    Text(
+                        text = "FOXYPROXY & EXTERNAL BROWSER GUIDE",
+                        color = OnCyberDark,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace
+                    )
+                }
+
+                Text(
+                    text = "To capture traffic from Firefox (with FoxyProxy), Chrome, or external Wi-Fi clients:",
+                    color = OnCyberSurfaceMuted,
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace
+                )
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(CyberDarkBg)
+                        .padding(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text("1. FoxyProxy Protocol: HTTP / HTTPS Proxy", color = NeonGreen, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+                    Text("2. Host: 127.0.0.1 (or device Wi-Fi IP for remote devices)", color = CyberCyan, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+                    Text("3. Port: ${proxySettings.port}", color = NeonAmber, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+                    Text("4. Import InterceptX_Root_CA.crt into Firefox/Android Trust Store", color = OnCyberDark, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
                 }
             }
         }

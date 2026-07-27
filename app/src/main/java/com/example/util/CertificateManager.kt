@@ -73,22 +73,34 @@ object CertificateManager {
         return try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 val resolver = context.contentResolver
-                val contentValues = ContentValues().apply {
+
+                // Export .pem file
+                val contentValuesPem = ContentValues().apply {
                     put(MediaStore.MediaColumns.DISPLAY_NAME, CA_FILENAME_PEM)
                     put(MediaStore.MediaColumns.MIME_TYPE, "application/x-pem-file")
                     put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
                 }
-
-                val uri: Uri? = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
-                if (uri != null) {
-                    resolver.openOutputStream(uri)?.use { stream ->
+                val uriPem: Uri? = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValuesPem)
+                uriPem?.let {
+                    resolver.openOutputStream(it)?.use { stream ->
                         stream.write(pemContent.toByteArray(Charsets.UTF_8))
                     }
-                    Pair(true, "Exported to Downloads/$CA_FILENAME_PEM")
-                } else {
-                    // Fallback to internal storage downloads
-                    saveToLegacyDownloadsDir(context, pemContent)
                 }
+
+                // Export .crt file
+                val contentValuesCrt = ContentValues().apply {
+                    put(MediaStore.MediaColumns.DISPLAY_NAME, CA_FILENAME_CRT)
+                    put(MediaStore.MediaColumns.MIME_TYPE, "application/x-x509-ca-cert")
+                    put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+                }
+                val uriCrt: Uri? = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValuesCrt)
+                uriCrt?.let {
+                    resolver.openOutputStream(it)?.use { stream ->
+                        stream.write(pemContent.toByteArray(Charsets.UTF_8))
+                    }
+                }
+
+                Pair(true, "Exported InterceptX_Root_CA.crt & .pem to Downloads folder")
             } else {
                 saveToLegacyDownloadsDir(context, pemContent)
             }
@@ -98,9 +110,11 @@ object CertificateManager {
             try {
                 val downloadsFolder = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
                     ?: context.filesDir
-                val file = File(downloadsFolder, CA_FILENAME_PEM)
-                FileOutputStream(file).use { it.write(pemContent.toByteArray(Charsets.UTF_8)) }
-                Pair(true, "Saved to ${file.absolutePath}")
+                val filePem = File(downloadsFolder, CA_FILENAME_PEM)
+                FileOutputStream(filePem).use { it.write(pemContent.toByteArray(Charsets.UTF_8)) }
+                val fileCrt = File(downloadsFolder, CA_FILENAME_CRT)
+                FileOutputStream(fileCrt).use { it.write(pemContent.toByteArray(Charsets.UTF_8)) }
+                Pair(true, "Saved CA (.crt & .pem) to ${downloadsFolder.absolutePath}")
             } catch (ex: Exception) {
                 Pair(false, "Failed to export certificate: ${ex.localizedMessage}")
             }

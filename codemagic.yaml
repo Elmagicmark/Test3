@@ -4,11 +4,12 @@ workflows:
     max_build_duration: 30
     instance_type: mac_mini_m1
     environment:
+      android_sdk: 35
       java: 17
     scripts:
-      - name: Grant execute permissions
+      - name: Set Android SDK location
         script: |
-          chmod +x gradlew || true
+          echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
       - name: Build Debug APK
         script: |
           gradle :app:assembleDebug

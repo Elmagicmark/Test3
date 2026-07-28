@@ -39,6 +39,12 @@ class ProxyEngine {
     private var proxyJob: Job? = null
     private val executor = Executors.newCachedThreadPool()
     @Volatile private var isRunning = false
+    @Volatile private var currentSettings: ProxySettings = ProxySettings()
+
+    fun updateSettings(newSettings: ProxySettings) {
+        currentSettings = newSettings
+        Log.d("ProxyEngine", "Settings updated live: isInterceptEnabled=${newSettings.isInterceptEnabled}")
+    }
 
     fun startProxy(
         settings: ProxySettings,
@@ -49,6 +55,7 @@ class ProxyEngine {
     ) {
         if (isRunning) stopProxy()
 
+        currentSettings = settings
         isRunning = true
         proxyJob = scope.launch(Dispatchers.IO) {
             try {
@@ -62,7 +69,10 @@ class ProxyEngine {
                     }
                 }
 
-                serverSocket = ServerSocket(settings.port, 100, bindAddr)
+                val socket = ServerSocket()
+                socket.reuseAddress = true
+                socket.bind(InetSocketAddress(bindAddr, settings.port), 100)
+                serverSocket = socket
                 Log.d("ProxyEngine", "Proxy Server started listening on 0.0.0.0 (All interfaces):${settings.port}")
 
                 val httpClient = buildOkHttpClient(settings)
@@ -74,7 +84,7 @@ class ProxyEngine {
                         onStatsUpdated(0L, 1)
                         executor.execute {
                             try {
-                                handleClientSocket(clientSocket, settings, httpClient, onTransactionCaptured, onInterceptCaptured, onStatsUpdated)
+                                handleClientSocket(clientSocket, httpClient, onTransactionCaptured, onInterceptCaptured, onStatsUpdated)
                             } catch (e: Exception) {
                                 Log.e("ProxyEngine", "Client handling error: ${e.message}")
                             } finally {
@@ -168,7 +178,6 @@ class ProxyEngine {
 
     private fun handleClientSocket(
         clientSocket: Socket,
-        settings: ProxySettings,
         httpClient: OkHttpClient,
         onTransactionCaptured: (HttpTransactionEntity) -> Unit,
         onInterceptCaptured: (InterceptedRequestEntity, onAction: (InterceptAction) -> Unit) -> Unit,
@@ -204,7 +213,7 @@ class ProxyEngine {
 
         // Handle HTTPS CONNECT tunnel
         if (method == "CONNECT") {
-            handleConnectTunnel(rawUrl, clientSocket, inputStream, outputStream, settings, onTransactionCaptured, onInterceptCaptured, onStatsUpdated)
+            handleConnectTunnel(rawUrl, clientSocket, inputStream, outputStream, onTransactionCaptured, onInterceptCaptured, onStatsUpdated)
             return
         }
 
@@ -235,7 +244,7 @@ class ProxyEngine {
         var execHeadersMap = headersMap.toMap()
         var execBody = requestBodyString
 
-        val shouldInterceptReq = settings.isInterceptEnabled && settings.interceptRequests && settings.shouldInterceptMethod(method)
+        val shouldInterceptReq = currentSettings.isInterceptEnabled && currentSettings.interceptRequests && currentSettings.shouldInterceptMethod(method)
 
         if (shouldInterceptReq) {
             val latch = java.util.concurrent.CountDownLatch(1)
@@ -361,7 +370,7 @@ class ProxyEngine {
             var execRespHeaderMap = respHeaderMap.toMap()
             var execResponseBodyString = responseBodyString
 
-            val shouldInterceptResp = settings.isInterceptEnabled && settings.interceptResponses && settings.shouldInterceptMethod(execMethod)
+            val shouldInterceptResp = currentSettings.isInterceptEnabled && currentSettings.interceptResponses && currentSettings.shouldInterceptMethod(execMethod)
 
             if (shouldInterceptResp) {
                 val respLatch = java.util.concurrent.CountDownLatch(1)
@@ -466,7 +475,7 @@ class ProxyEngine {
             responseBody = responseBodyString,
             responseTimeMs = duration.toLong(),
             bytesTransferred = byteCount,
-            isIntercepted = settings.isInterceptEnabled
+            isIntercepted = currentSettings.isInterceptEnabled
         )
 
         onTransactionCaptured(tx)
@@ -477,12 +486,11 @@ class ProxyEngine {
         clientSocket: Socket,
         inputStream: InputStream,
         outputStream: OutputStream,
-        settings: ProxySettings,
         onTransactionCaptured: (HttpTransactionEntity) -> Unit,
         onInterceptCaptured: (InterceptedRequestEntity, onAction: (InterceptAction) -> Unit) -> Unit,
         onStatsUpdated: (bytes: Long, activeConnIncrement: Int) -> Unit
     ) {
-        if (settings.isInterceptEnabled && settings.shouldInterceptMethod("CONNECT")) {
+        if (currentSettings.isInterceptEnabled && currentSettings.shouldInterceptMethod("CONNECT")) {
             val latch = java.util.concurrent.CountDownLatch(1)
             var actionResult: InterceptAction = InterceptAction.Forward("CONNECT", "https://$hostPort", mapOf("Host" to hostPort), "")
 
@@ -529,10 +537,10 @@ class ProxyEngine {
 
         var targetSocket: Socket? = null
         try {
-            targetSocket = if (settings.upstreamProxyEnabled && settings.upstreamProxyHost.isNotBlank()) {
+            targetSocket = if (currentSettings.upstreamProxyEnabled && currentSettings.upstreamProxyHost.isNotBlank()) {
                 val proxy = java.net.Proxy(
                     java.net.Proxy.Type.HTTP,
-                    InetSocketAddress(settings.upstreamProxyHost, settings.upstreamProxyPort)
+                    InetSocketAddress(currentSettings.upstreamProxyHost, currentSettings.upstreamProxyPort)
                 )
                 val s = Socket(proxy)
                 s.connect(InetSocketAddress(targetHost, targetPort), 10000)

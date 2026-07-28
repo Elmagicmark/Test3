@@ -59,7 +59,11 @@ class ProxyRepository(
         _proxySettings.value = newSettings
 
         if (running) {
-            startProxyEngine(newSettings)
+            if (!proxyEngine.isEngineRunning()) {
+                startProxyEngine(newSettings)
+            } else {
+                proxyEngine.updateSettings(newSettings)
+            }
         } else {
             releaseAllPendingIntercepts()
             proxyEngine.stopProxy()
@@ -74,7 +78,11 @@ class ProxyRepository(
             releaseAllPendingIntercepts()
         }
         if (newSettings.isProxyRunning) {
-            startProxyEngine(newSettings)
+            if (proxyEngine.isEngineRunning()) {
+                proxyEngine.updateSettings(newSettings)
+            } else {
+                startProxyEngine(newSettings)
+            }
         }
     }
 
@@ -89,9 +97,19 @@ class ProxyRepository(
     }
 
     fun updateProxySettings(newSettings: ProxySettings) {
+        val oldSettings = _proxySettings.value
         _proxySettings.value = newSettings
         if (newSettings.isProxyRunning) {
-            startProxyEngine(newSettings)
+            if (proxyEngine.isEngineRunning()) {
+                if (oldSettings.port != newSettings.port || oldSettings.host != newSettings.host) {
+                    proxyEngine.stopProxy()
+                    startProxyEngine(newSettings)
+                } else {
+                    proxyEngine.updateSettings(newSettings)
+                }
+            } else {
+                startProxyEngine(newSettings)
+            }
         } else {
             releaseAllPendingIntercepts()
             proxyEngine.stopProxy()

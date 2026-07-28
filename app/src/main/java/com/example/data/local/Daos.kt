@@ -51,6 +51,9 @@ interface InterceptedRequestDao {
     @Query("SELECT * FROM intercepted_requests ORDER BY timestamp ASC")
     fun getAllIntercepted(): Flow<List<InterceptedRequestEntity>>
 
+    @Query("SELECT * FROM intercepted_requests WHERE id = :id LIMIT 1")
+    suspend fun getInterceptedById(id: Long): InterceptedRequestEntity?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertIntercepted(item: InterceptedRequestEntity): Long
 

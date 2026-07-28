@@ -41,7 +41,9 @@ data class InterceptedRequestEntity(
     val url: String,
     val headersJson: String,
     val body: String,
-    val timestamp: Long = System.currentTimeMillis()
+    val timestamp: Long = System.currentTimeMillis(),
+    val isResponse: Boolean = false,
+    val statusCode: Int = 200
 )
 
 @Entity(tableName = "target_scopes")

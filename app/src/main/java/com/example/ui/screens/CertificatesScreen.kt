@@ -145,7 +145,7 @@ fun CertificatesScreen(
         CyberCard(borderColor = CyberCyan) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    text = "ANDROID CA INSTALLATION GUIDE",
+                    text = "دليل تثبيت شهادة CA على نظام أندرويد (INSTALL GUIDE)",
                     color = CyberCyan,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
@@ -154,26 +154,26 @@ fun CertificatesScreen(
 
                 SetupStepItem(
                     stepNumber = "01",
-                    title = "Export Root CA Certificate",
-                    description = "Click 'EXPORT CA (.PEM)' above to save the root certificate file to your device Download folder."
+                    title = "تصدير شهادة Root CA",
+                    description = "اضغط 'EXPORT (.CRT & .PEM)' لحفظ ملف الشهادة في مجلد Downloads بهاتفك."
                 )
 
                 SetupStepItem(
                     stepNumber = "02",
-                    title = "Open Android Security Settings",
-                    description = "Navigate to Android Settings -> Security & Privacy -> More Security Settings -> Encryption & Credentials -> Install a Certificate."
+                    title = "افتح إعدادات الأمان في الهاتف",
+                    description = "الذهاب إلى: الإعدادات -> الأمان والخصوصية -> المزيد من إعدادات الأمان -> التشفير وأدوات الاعتماد -> تثبيت شهادة."
                 )
 
                 SetupStepItem(
                     stepNumber = "03",
-                    title = "Install as CA / Wi-Fi Certificate",
-                    description = "Select 'CA Certificate' (or VPN & App user certificate), locate InterceptX_Root_CA.pem and confirm installation."
+                    title = "اختر شهادة CA (CA Certificate)",
+                    description = "اختر 'شهادة CA' (وليس شهادة المستخدم / VPN لمنع طلب المفتاح الخاص)، ثم اختر 'التثبيت على أي حال' وحدد ملف InterceptX_Root_CA.crt من مجلد Downloads."
                 )
 
                 SetupStepItem(
                     stepNumber = "04",
-                    title = "Configure Network Proxy",
-                    description = "Set your Wi-Fi or APN HTTP Proxy to Manual: Host 127.0.0.1, Port 8080. Start InterceptX Proxy Engine!"
+                    title = "ضبط البروكسي في Firefox / FoxyProxy / Wi-Fi",
+                    description = "في FoxyProxy أو ضبط شبكة Wi-Fi: حدد البروكسي اليدوي Host: 127.0.0.1 والمنفذ Port: 8080 لتجريب الفحص."
                 )
             }
         }

@@ -194,7 +194,24 @@ fun InterceptScreen(
                                 verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier.weight(1f)
                             ) {
-                                MethodBadge(method = item.method)
+                                if (item.isResponse) {
+                                    Surface(
+                                        color = WarningCrimson.copy(alpha = 0.2f),
+                                        shape = RoundedCornerShape(4.dp),
+                                        border = androidx.compose.foundation.BorderStroke(1.dp, WarningCrimson)
+                                    ) {
+                                        Text(
+                                            text = "RESP ${item.statusCode}",
+                                            color = WarningCrimson,
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            fontFamily = FontFamily.Monospace,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                } else {
+                                    MethodBadge(method = item.method)
+                                }
                                 Text(
                                     text = item.url,
                                     color = OnCyberDark,
@@ -227,12 +244,20 @@ fun InterceptScreen(
 
                 CyberCard(
                     modifier = Modifier.weight(1f),
-                    borderColor = CyberCyan
+                    borderColor = if (req.isResponse) WarningCrimson else CyberCyan
                 ) {
                     Column(
                         modifier = Modifier.fillMaxSize(),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
+                        Text(
+                            text = if (req.isResponse) "SERVER RESPONSE INTERCEPTED (MODIFIED BEFORE CLIENT)" else "CLIENT REQUEST INTERCEPTED (MODIFIED BEFORE SERVER)",
+                            color = if (req.isResponse) WarningCrimson else CyberCyan,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace
+                        )
+
                         // Method & URL row
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -241,13 +266,13 @@ fun InterceptScreen(
                             OutlinedTextField(
                                 value = editableMethod,
                                 onValueChange = { editableMethod = it },
-                                modifier = Modifier.width(90.dp),
+                                modifier = Modifier.width(100.dp),
                                 textStyle = LocalTextStyle.current.copy(
                                     fontFamily = FontFamily.Monospace,
                                     fontSize = 12.sp,
-                                    color = CyberCyan
+                                    color = if (req.isResponse) WarningCrimson else CyberCyan
                                 ),
-                                label = { Text("Method", fontSize = 10.sp) }
+                                label = { Text(if (req.isResponse) "Status" else "Method", fontSize = 10.sp) }
                             )
 
                             OutlinedTextField(
@@ -275,7 +300,7 @@ fun InterceptScreen(
                                 fontSize = 11.sp,
                                 color = OnCyberDark
                             ),
-                            label = { Text("Request Headers (JSON)", fontSize = 10.sp) }
+                            label = { Text(if (req.isResponse) "Response Headers (JSON)" else "Request Headers (JSON)", fontSize = 10.sp) }
                         )
 
                         // Body Text Field
@@ -290,7 +315,7 @@ fun InterceptScreen(
                                 fontSize = 11.sp,
                                 color = OnCyberDark
                             ),
-                            label = { Text("Request Body", fontSize = 10.sp) }
+                            label = { Text(if (req.isResponse) "Response Body (Spoof Payload)" else "Request Body", fontSize = 10.sp) }
                         )
 
                         // Action Buttons: Forward, Drop, Send to Repeater
@@ -303,10 +328,10 @@ fun InterceptScreen(
                                     onForward(req.id, editableMethod, editableUrl, editableHeaders, editableBody)
                                 },
                                 colors = ButtonDefaults.buttonColors(containerColor = NeonGreen, contentColor = Color.Black),
-                                modifier = Modifier.weight(1f),
+                                modifier = Modifier.weight(1.2f),
                                 shape = RoundedCornerShape(4.dp)
                             ) {
-                                Text("FORWARD", fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, fontSize = 11.sp)
+                                Text(if (req.isResponse) "FORWARD RESP" else "FORWARD REQ", fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, fontSize = 10.sp)
                             }
 
                             Button(
@@ -315,7 +340,7 @@ fun InterceptScreen(
                                 modifier = Modifier.weight(1f),
                                 shape = RoundedCornerShape(4.dp)
                             ) {
-                                Text("DROP", fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, fontSize = 11.sp)
+                                Text("DROP", fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, fontSize = 10.sp)
                             }
 
                             OutlinedButton(

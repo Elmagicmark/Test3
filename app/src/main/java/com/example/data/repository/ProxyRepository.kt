@@ -42,6 +42,7 @@ class ProxyRepository(
     val securityProjects: Flow<List<SecurityProjectEntity>> = projectDao.getAllProjects()
 
     private val proxyEngine = ProxyEngine()
+    private val pendingIntercepts = java.util.concurrent.ConcurrentHashMap<Long, (com.example.proxy.InterceptAction) -> Unit>()
 
     init {
         scope.launch(Dispatchers.IO) {
@@ -60,6 +61,7 @@ class ProxyRepository(
         if (running) {
             startProxyEngine(newSettings)
         } else {
+            releaseAllPendingIntercepts()
             proxyEngine.stopProxy()
             _proxyStats.value = _proxyStats.value.copy(activeConnections = 0)
         }
@@ -68,8 +70,21 @@ class ProxyRepository(
     fun toggleIntercept(intercept: Boolean) {
         val newSettings = _proxySettings.value.copy(isInterceptEnabled = intercept)
         _proxySettings.value = newSettings
+        if (!intercept) {
+            releaseAllPendingIntercepts()
+        }
         if (newSettings.isProxyRunning) {
             startProxyEngine(newSettings)
+        }
+    }
+
+    private fun releaseAllPendingIntercepts() {
+        pendingIntercepts.forEach { (_, callback) ->
+            callback.invoke(com.example.proxy.InterceptAction.Drop)
+        }
+        pendingIntercepts.clear()
+        scope.launch(Dispatchers.IO) {
+            interceptDao.clearAll()
         }
     }
 
@@ -78,6 +93,7 @@ class ProxyRepository(
         if (newSettings.isProxyRunning) {
             startProxyEngine(newSettings)
         } else {
+            releaseAllPendingIntercepts()
             proxyEngine.stopProxy()
             _proxyStats.value = _proxyStats.value.copy(activeConnections = 0)
         }
@@ -92,9 +108,10 @@ class ProxyRepository(
                     saveTransaction(tx)
                 }
             },
-            onInterceptCaptured = { req ->
+            onInterceptCaptured = { req, onAction ->
                 scope.launch(Dispatchers.IO) {
-                    addInterceptedRequest(req)
+                    val id = addInterceptedRequest(req)
+                    pendingIntercepts[id] = onAction
                 }
             },
             onStatsUpdated = { bytes, connDelta ->
@@ -163,29 +180,44 @@ class ProxyRepository(
         return interceptDao.insertIntercepted(req)
     }
 
+    private fun parseHeadersJson(jsonStr: String): Map<String, String> {
+        val map = mutableMapOf<String, String>()
+        if (jsonStr.isBlank()) return map
+        try {
+            val json = org.json.JSONObject(jsonStr)
+            val keys = json.keys()
+            while (keys.hasNext()) {
+                val key = keys.next()
+                map[key] = json.optString(key)
+            }
+        } catch (_: Exception) {}
+        return map
+    }
+
     suspend fun dropInterceptedRequest(id: Long) {
+        val callback = pendingIntercepts.remove(id)
+        callback?.invoke(com.example.proxy.InterceptAction.Drop)
         interceptDao.deleteIntercepted(id)
     }
 
     suspend fun forwardInterceptedRequest(id: Long, method: String, url: String, headersJson: String, body: String) {
-        // Record as normal transaction after forwarding
-        val newTx = HttpTransactionEntity(
-            method = method,
-            url = url,
-            statusCode = 200,
-            responseTimeMs = (120..350).random().toLong(),
-            requestHeadersJson = headersJson,
-            requestBody = body,
-            responseHeadersJson = "{\"Content-Type\":\"application/json; charset=utf-8\",\"Server\":\"nginx/1.24.0\"}",
-            responseBody = "{\"status\":\"success\",\"message\":\"Forwarded transaction executed successfully\",\"timestamp\":${System.currentTimeMillis()}}",
-            isIntercepted = true,
-            bytesTransferred = (body.length + 250).toLong()
-        )
-        saveTransaction(newTx)
+        val callback = pendingIntercepts.remove(id)
+        val headersMap = parseHeadersJson(headersJson)
+        callback?.invoke(com.example.proxy.InterceptAction.Forward(method, url, headersMap, body))
         interceptDao.deleteIntercepted(id)
     }
 
     suspend fun forwardAllIntercepted() {
+        pendingIntercepts.forEach { (id, callback) ->
+            val entity = interceptDao.getInterceptedById(id)
+            if (entity != null) {
+                val headersMap = parseHeadersJson(entity.headersJson)
+                callback.invoke(com.example.proxy.InterceptAction.Forward(entity.method, entity.url, headersMap, entity.body))
+            } else {
+                callback.invoke(com.example.proxy.InterceptAction.Forward("GET", "", emptyMap(), ""))
+            }
+        }
+        pendingIntercepts.clear()
         interceptDao.clearAll()
     }
 

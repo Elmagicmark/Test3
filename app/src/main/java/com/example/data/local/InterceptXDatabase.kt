@@ -13,7 +13,7 @@ import androidx.room.RoomDatabase
         TargetScopeEntity::class,
         SecurityProjectEntity::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class InterceptXDatabase : RoomDatabase() {

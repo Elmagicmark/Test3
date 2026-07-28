@@ -35,8 +35,14 @@ object CertificateManager {
         val prefs = context.getSharedPreferences("interceptx_ca_prefs", Context.MODE_PRIVATE)
         val savedPem = prefs.getString("ca_pem", null)
         if (!savedPem.isNullOrBlank()) {
-            cachedPemString = savedPem
-            return savedPem!!
+            try {
+                val factory = CertificateFactory.getInstance("X.509")
+                val cert = factory.generateCertificate(ByteArrayInputStream(savedPem.toByteArray(Charsets.UTF_8))) as X509Certificate
+                if (cert.basicConstraints >= 0) {
+                    cachedPemString = savedPem
+                    return savedPem
+                }
+            } catch (_: Exception) {}
         }
 
         val newPem = generateSelfSignedX509Pem()
@@ -82,7 +88,7 @@ object CertificateManager {
 
     // ASN.1 DER X.509 Certificate Builder
     private fun buildX509DerCertificate(keyPair: KeyPair): ByteArray {
-        val serialNumber = System.currentTimeMillis()
+        val serialNumber = Math.abs(System.currentTimeMillis())
 
         // 1. Version [0] EXPLICIT INTEGER 2 (v3)
         val version = derExplicitContext(0, derInteger(2))
@@ -111,6 +117,35 @@ object CertificateManager {
         // 7. SubjectPublicKeyInfo
         val pubKeyInfo = keyPair.public.encoded
 
+        // 8. X.509 v3 Extensions [3] EXPLICIT
+        // Extension 1: BasicConstraints (2.5.29.19) - Critical, cA = TRUE
+        val extBasicConstraints = derSequence(
+            derOid("2.5.29.19"),
+            derBoolean(true),
+            derOctetString(derSequence(derBoolean(true)))
+        )
+
+        // Extension 2: KeyUsage (2.5.29.15) - Critical, keyCertSign (5), cRLSign (6), digitalSignature (0) -> 0x86
+        val extKeyUsage = derSequence(
+            derOid("2.5.29.15"),
+            derBoolean(true),
+            derOctetString(derBitString(byteArrayOf(0x86.toByte())))
+        )
+
+        // Extension 3: SubjectKeyIdentifier (2.5.29.14)
+        val sha1 = try {
+            MessageDigest.getInstance("SHA-1").digest(keyPair.public.encoded)
+        } catch (_: Exception) {
+            byteArrayOf(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20)
+        }
+        val extSubjectKeyId = derSequence(
+            derOid("2.5.29.14"),
+            derOctetString(derOctetString(sha1))
+        )
+
+        val extensionsSeq = derSequence(extBasicConstraints, extKeyUsage, extSubjectKeyId)
+        val extensions = derExplicitContext(3, extensionsSeq)
+
         // Assemble TBSCertificate
         val tbsCertificate = derSequence(
             version,
@@ -119,7 +154,8 @@ object CertificateManager {
             issuerName,
             validity,
             subjectName,
-            pubKeyInfo
+            pubKeyInfo,
+            extensions
         )
 
         // Sign TBSCertificate
@@ -136,6 +172,15 @@ object CertificateManager {
             sigAlgId,
             signatureBitString
         )
+    }
+
+    private fun derBoolean(value: Boolean): ByteArray {
+        return byteArrayOf(0x01, 0x01, if (value) 0xFF.toByte() else 0x00)
+    }
+
+    private fun derOctetString(bytes: ByteArray): ByteArray {
+        val header = derTagAndLength(0x04, bytes.size)
+        return header + bytes
     }
 
     // ASN.1 Encoding Helpers
@@ -241,27 +286,49 @@ object CertificateManager {
     }
 
     fun installCertificateInSystem(context: Context): Pair<Boolean, String> {
-        return try {
-            val pemContent = getOrGenerateCaCertificatePem(context)
-            val certBytes = pemContent.toByteArray(Charsets.UTF_8)
+        // First export certificate to Downloads folder
+        exportCertificateToDownloads(context)
 
-            // Direct KeyChain Installation Intent (Standard Android CA Installation)
-            val intent = KeyChain.createInstallIntent().apply {
-                putExtra(KeyChain.EXTRA_CERTIFICATE, certBytes)
-                putExtra(KeyChain.EXTRA_NAME, "InterceptX Root CA")
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        return try {
+            val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+            val crtFile = File(downloadsDir, CA_FILENAME_CRT)
+            if (!crtFile.exists()) {
+                val pemContent = getOrGenerateCaCertificatePem(context)
+                crtFile.writeText(pemContent)
             }
-            context.startActivity(intent)
-            Pair(true, "Opened Android System Certificate Installer")
+
+            val uri: Uri = try {
+                androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", crtFile)
+            } catch (e: Exception) {
+                Uri.fromFile(crtFile)
+            }
+
+            // Try opening certificate installer directly via ACTION_VIEW
+            val viewIntent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "application/x-x509-ca-cert")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+
+            if (viewIntent.resolveActivity(context.packageManager) != null) {
+                context.startActivity(viewIntent)
+                Pair(true, "تم حفظ الشهادة في Downloads وفتح مثبت الشهادات")
+            } else {
+                // Open Security Settings directly
+                val settingsIntent = Intent(android.provider.Settings.ACTION_SECURITY_SETTINGS).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(settingsIntent)
+                Pair(true, "تم الحفظ في Downloads. افتح: الأمان -> تثبيت شهادة -> شهادة CA")
+            }
         } catch (e: Exception) {
             try {
                 val settingsIntent = Intent(android.provider.Settings.ACTION_SECURITY_SETTINGS).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 context.startActivity(settingsIntent)
-                Pair(true, "Opened Security Settings for Certificate Installation")
+                Pair(true, "تم فتح إعدادات الأمان. حدد شهادة CA من مجلد Downloads")
             } catch (ex: Exception) {
-                Pair(false, "Could not open certificate installer: ${ex.localizedMessage}")
+                Pair(false, "تعذر فتح إعدادات الأمان: ${ex.localizedMessage}")
             }
         }
     }

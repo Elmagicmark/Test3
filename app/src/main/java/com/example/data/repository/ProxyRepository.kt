@@ -207,6 +207,41 @@ class ProxyRepository(
         interceptDao.deleteIntercepted(id)
     }
 
+    suspend fun forwardInterceptedResponse(id: Long, statusCode: Int, headersJson: String, body: String) {
+        val callback = pendingIntercepts.remove(id)
+        val headersMap = parseHeadersJson(headersJson)
+        callback?.invoke(com.example.proxy.InterceptAction.ForwardDirectResponse(statusCode, headersMap, body))
+        interceptDao.deleteIntercepted(id)
+    }
+
+    suspend fun fetchAndInspectResponse(id: Long, method: String, url: String, headersJson: String, body: String): Unit = withContext(Dispatchers.IO) {
+        val headersMap = parseHeadersJson(headersJson)
+        val (code, respBody) = executeRawHttpRequest(method, url, headersMap, body)
+        val defaultRespHeaders = "{\"Content-Type\":\"application/json; charset=utf-8\",\"Server\":\"InterceptX-Engine\"}"
+        val updatedEntity = InterceptedRequestEntity(
+            id = id,
+            method = code.toString(),
+            url = url,
+            headersJson = defaultRespHeaders,
+            body = respBody,
+            isResponse = true,
+            statusCode = code
+        )
+        interceptDao.updateIntercepted(updatedEntity)
+    }
+
+    fun toggleInterceptMethod(method: String) {
+        val current = _proxySettings.value.interceptMethods.toMutableSet()
+        val upper = method.uppercase()
+        if (current.contains(upper)) {
+            current.remove(upper)
+        } else {
+            current.add(upper)
+        }
+        val newSettings = _proxySettings.value.copy(interceptMethods = current)
+        updateProxySettings(newSettings)
+    }
+
     suspend fun forwardAllIntercepted() {
         pendingIntercepts.forEach { (id, callback) ->
             val entity = interceptDao.getInterceptedById(id)

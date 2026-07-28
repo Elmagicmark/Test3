@@ -23,6 +23,13 @@ sealed class InterceptAction {
         val headersMap: Map<String, String>,
         val body: String
     ) : InterceptAction()
+
+    data class ForwardDirectResponse(
+        val statusCode: Int,
+        val headersMap: Map<String, String>,
+        val body: String
+    ) : InterceptAction()
+
     object Drop : InterceptAction()
 }
 
@@ -228,7 +235,9 @@ class ProxyEngine {
         var execHeadersMap = headersMap.toMap()
         var execBody = requestBodyString
 
-        if (settings.isInterceptEnabled) {
+        val shouldInterceptReq = settings.isInterceptEnabled && settings.interceptRequests && settings.shouldInterceptMethod(method)
+
+        if (shouldInterceptReq) {
             val latch = java.util.concurrent.CountDownLatch(1)
             var actionResult: InterceptAction = InterceptAction.Forward(method, fullUrl, headersMap, requestBodyString)
 
@@ -245,7 +254,7 @@ class ProxyEngine {
             }
 
             try {
-                latch.await(60, TimeUnit.SECONDS)
+                latch.await(120, TimeUnit.SECONDS)
             } catch (e: Exception) {
                 Log.e("ProxyEngine", "Intercept wait timeout: ${e.message}")
             }
@@ -266,6 +275,36 @@ class ProxyEngine {
                         responseBody = "[InterceptX] Request dropped by user in Intercept mode.",
                         responseTimeMs = 0L,
                         bytesTransferred = dropResp.length.toLong(),
+                        isIntercepted = true
+                    )
+                    onTransactionCaptured(tx)
+                    return
+                }
+                is InterceptAction.ForwardDirectResponse -> {
+                    val statusText = getStatusMessage(res.statusCode)
+                    val respBodyBytes = res.body.toByteArray(Charsets.UTF_8)
+                    val finalHeaders = res.headersMap.toMutableMap()
+                    finalHeaders["Content-Length"] = respBodyBytes.size.toString()
+                    val headerLines = finalHeaders.entries.joinToString("\r\n") { "${it.key}: ${it.value}" }
+                    val rawResponse = "HTTP/1.1 ${res.statusCode} $statusText\r\n$headerLines\r\n\r\n"
+                    val headerBytes = rawResponse.toByteArray(Charsets.UTF_8)
+
+                    outputStream.write(headerBytes)
+                    if (respBodyBytes.isNotEmpty()) {
+                        outputStream.write(respBodyBytes)
+                    }
+                    outputStream.flush()
+
+                    val tx = HttpTransactionEntity(
+                        url = fullUrl,
+                        method = method,
+                        statusCode = res.statusCode,
+                        requestHeadersJson = headersJson,
+                        requestBody = requestBodyString,
+                        responseHeadersJson = "{" + res.headersMap.entries.joinToString(",") { "\"${it.key}\":\"${it.value.replace("\"", "\\\"")}\"" } + "}",
+                        responseBody = res.body,
+                        responseTimeMs = 12L,
+                        bytesTransferred = (headerBytes.size + respBodyBytes.size).toLong(),
                         isIntercepted = true
                     )
                     onTransactionCaptured(tx)
@@ -322,7 +361,9 @@ class ProxyEngine {
             var execRespHeaderMap = respHeaderMap.toMap()
             var execResponseBodyString = responseBodyString
 
-            if (settings.isInterceptEnabled) {
+            val shouldInterceptResp = settings.isInterceptEnabled && settings.interceptResponses && settings.shouldInterceptMethod(execMethod)
+
+            if (shouldInterceptResp) {
                 val respLatch = java.util.concurrent.CountDownLatch(1)
                 var respActionResult: InterceptAction = InterceptAction.Forward(statusCode.toString(), execUrl, respHeaderMap, responseBodyString)
 
@@ -367,6 +408,11 @@ class ProxyEngine {
                         )
                         onTransactionCaptured(tx)
                         return
+                    }
+                    is InterceptAction.ForwardDirectResponse -> {
+                        execStatusCode = res.statusCode
+                        execRespHeaderMap = res.headersMap
+                        execResponseBodyString = res.body
                     }
                     is InterceptAction.Forward -> {
                         execStatusCode = res.method.toIntOrNull() ?: statusCode
@@ -436,7 +482,7 @@ class ProxyEngine {
         onInterceptCaptured: (InterceptedRequestEntity, onAction: (InterceptAction) -> Unit) -> Unit,
         onStatsUpdated: (bytes: Long, activeConnIncrement: Int) -> Unit
     ) {
-        if (settings.isInterceptEnabled) {
+        if (settings.isInterceptEnabled && settings.shouldInterceptMethod("CONNECT")) {
             val latch = java.util.concurrent.CountDownLatch(1)
             var actionResult: InterceptAction = InterceptAction.Forward("CONNECT", "https://$hostPort", mapOf("Host" to hostPort), "")
 

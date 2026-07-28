@@ -285,9 +285,17 @@ class MainActivity : ComponentActivity() {
                             InterceptScreen(
                                 isInterceptEnabled = proxySettings.isInterceptEnabled,
                                 interceptedList = interceptedRequests,
+                                interceptMethods = proxySettings.interceptMethods,
                                 onToggleIntercept = { mainViewModel.toggleIntercept(it) },
+                                onToggleInterceptMethod = { mainViewModel.toggleInterceptMethod(it) },
                                 onForward = { id, method, url, headers, body ->
                                     mainViewModel.forwardInterceptedRequest(id, method, url, headers, body)
+                                },
+                                onForwardResponse = { id, statusCode, headers, body ->
+                                    mainViewModel.forwardInterceptedResponse(id, statusCode, headers, body)
+                                },
+                                onFetchResponse = { id, method, url, headers, body, onComplete ->
+                                    mainViewModel.fetchAndInspectResponse(id, method, url, headers, body, onComplete)
                                 },
                                 onDrop = { mainViewModel.dropInterceptedRequest(it) },
                                 onForwardAll = { mainViewModel.forwardAllIntercepted() },

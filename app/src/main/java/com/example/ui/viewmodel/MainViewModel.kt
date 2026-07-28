@@ -164,6 +164,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun forwardInterceptedResponse(id: Long, statusCode: Int, headersJson: String, body: String) {
+        viewModelScope.launch {
+            repository.forwardInterceptedResponse(id, statusCode, headersJson, body)
+        }
+    }
+
+    fun fetchAndInspectResponse(id: Long, method: String, url: String, headersJson: String, body: String, onComplete: () -> Unit = {}) {
+        viewModelScope.launch {
+            repository.fetchAndInspectResponse(id, method, url, headersJson, body)
+            onComplete()
+        }
+    }
+
+    fun toggleInterceptMethod(method: String) {
+        repository.toggleInterceptMethod(method)
+    }
+
     fun dropInterceptedRequest(id: Long) {
         viewModelScope.launch {
             repository.dropInterceptedRequest(id)

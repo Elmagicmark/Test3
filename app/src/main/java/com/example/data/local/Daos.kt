@@ -57,6 +57,9 @@ interface InterceptedRequestDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertIntercepted(item: InterceptedRequestEntity): Long
 
+    @Update
+    suspend fun updateIntercepted(item: InterceptedRequestEntity)
+
     @Query("DELETE FROM intercepted_requests WHERE id = :id")
     suspend fun deleteIntercepted(id: Long)
 

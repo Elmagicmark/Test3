@@ -44,8 +44,8 @@ fun DashboardScreen(
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+            .padding(10.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         // Hero Proxy Control
         item {
@@ -62,14 +62,14 @@ fun DashboardScreen(
                         Text(
                             text = "LOCAL PROXY",
                             color = if (proxySettings.isProxyRunning) NeonGreen else WarningCrimson,
-                            fontSize = 18.sp,
+                            fontSize = 15.sp,
                             fontWeight = FontWeight.Bold,
                             fontFamily = FontFamily.Monospace
                         )
                         Text(
                             text = if (proxySettings.isProxyRunning) "PORT ${proxySettings.port} • ${proxySettings.host}" else "ENGINE INACTIVE",
                             color = OnCyberSurfaceMuted,
-                            fontSize = 11.sp,
+                            fontSize = 10.sp,
                             fontFamily = FontFamily.Monospace
                         )
                     }
@@ -103,22 +103,22 @@ fun DashboardScreen(
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                         modifier = Modifier.weight(1f)
                     ) {
-                        Icon(Icons.Default.VpnKey, contentDescription = "Cert", tint = NeonAmber, modifier = Modifier.size(24.dp))
+                        Icon(Icons.Default.VpnKey, contentDescription = "Cert", tint = NeonAmber, modifier = Modifier.size(20.dp))
                         Column {
                             Text(
                                 text = "ROOT CA CERTIFICATE",
                                 color = OnCyberDark,
-                                fontSize = 13.sp,
+                                fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
                                 fontFamily = FontFamily.Monospace
                             )
                             Text(
                                 text = "InterceptX_Root_CA.pem",
                                 color = OnCyberSurfaceMuted,
-                                fontSize = 11.sp,
+                                fontSize = 10.sp,
                                 fontFamily = FontFamily.Monospace
                             )
                         }
@@ -130,12 +130,13 @@ fun DashboardScreen(
                             android.widget.Toast.makeText(context, result.second, android.widget.Toast.LENGTH_LONG).show()
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = NeonAmber, contentColor = Color.Black),
-                        shape = RoundedCornerShape(6.dp),
+                        shape = RoundedCornerShape(4.dp),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
                         modifier = Modifier.testTag("export_ca_cert_dashboard_button")
                     ) {
-                        Icon(Icons.Default.FileDownload, contentDescription = "Export", modifier = Modifier.size(16.dp))
+                        Icon(Icons.Default.FileDownload, contentDescription = "Export", modifier = Modifier.size(14.dp))
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("EXPORT (.PEM)", fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                        Text("EXPORT (.PEM)", fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
                     }
                 }
             }
@@ -146,14 +147,14 @@ fun DashboardScreen(
             Text(
                 text = "REAL-TIME TELEMETRY",
                 color = OnCyberSurfaceMuted,
-                fontSize = 12.sp,
+                fontSize = 11.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = FontFamily.Monospace
             )
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(4.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 StatsCard(
                     title = "Requests",
@@ -170,10 +171,10 @@ fun DashboardScreen(
                     modifier = Modifier.weight(1f)
                 )
             }
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(4.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 StatsCard(
                     title = "Active Conn",
@@ -306,7 +307,7 @@ fun DashboardScreen(
                 }
             }
         } else {
-            items(recentTransactions.take(8)) { tx ->
+            items(recentTransactions.take(15)) { tx ->
                 RecentTrafficRow(
                     transaction = tx,
                     onClick = { onSelectTransaction(tx) }
@@ -339,7 +340,7 @@ fun RecentTrafficRow(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.weight(1f)
             ) {
@@ -348,7 +349,7 @@ fun RecentTrafficRow(
                     Text(
                         text = transaction.url,
                         color = OnCyberDark,
-                        fontSize = 12.sp,
+                        fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -357,7 +358,7 @@ fun RecentTrafficRow(
                     Text(
                         text = "${transaction.method.uppercase()} • ${transaction.responseTimeMs}ms • ${(transaction.responseBody.length / 1024.0).let { "%.1f".format(it) }}kb",
                         color = OnCyberSurfaceMuted,
-                        fontSize = 10.sp,
+                        fontSize = 9.sp,
                         fontFamily = FontFamily.Monospace
                     )
                 }
@@ -366,10 +367,10 @@ fun RecentTrafficRow(
             Text(
                 text = "↗",
                 color = CyberCyan,
-                fontSize = 14.sp,
+                fontSize = 12.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = FontFamily.Monospace,
-                modifier = Modifier.padding(start = 8.dp)
+                modifier = Modifier.padding(start = 4.dp)
             )
         }
     }

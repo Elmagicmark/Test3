@@ -56,8 +56,8 @@ fun RepeaterScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+            .padding(10.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         // Tab Selector Row
         Row(
@@ -66,7 +66,7 @@ fun RepeaterScreen(
         ) {
             LazyRow(
                 modifier = Modifier.weight(1f),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 items(tabs) { tab ->
                     val isSelected = tab.id == activeTabId
@@ -79,16 +79,16 @@ fun RepeaterScreen(
                                 RoundedCornerShape(4.dp)
                             )
                             .clickable { activeTabId = tab.id }
-                            .padding(horizontal = 10.dp, vertical = 6.dp)
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
                             Text(
                                 text = tab.tabName,
                                 color = if (isSelected) NeonGreen else OnCyberDark,
-                                fontSize = 11.sp,
+                                fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
                                 fontFamily = FontFamily.Monospace
                             )
@@ -98,7 +98,7 @@ fun RepeaterScreen(
                                     contentDescription = "Close Tab",
                                     tint = WarningCrimson,
                                     modifier = Modifier
-                                        .size(14.dp)
+                                        .size(12.dp)
                                         .clickable { onDeleteTab(tab.id) }
                                 )
                             }
@@ -107,20 +107,22 @@ fun RepeaterScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.width(6.dp))
+            Spacer(modifier = Modifier.width(4.dp))
 
             IconButton(
                 onClick = { onCreateTab() },
-                modifier = Modifier.testTag("add_repeater_tab_button")
+                modifier = Modifier
+                    .size(32.dp)
+                    .testTag("add_repeater_tab_button")
             ) {
-                Icon(Icons.Default.Add, contentDescription = "New Tab", tint = NeonGreen)
+                Icon(Icons.Default.Add, contentDescription = "New Tab", tint = NeonGreen, modifier = Modifier.size(18.dp))
             }
         }
 
         if (activeTab == null) {
             CyberCard(modifier = Modifier.weight(1f)) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("No active repeater tab. Click + to create a tab.", color = OnCyberSurfaceMuted, fontFamily = FontFamily.Monospace)
+                    Text("No active repeater tab. Click + to create a tab.", color = OnCyberSurfaceMuted, fontFamily = FontFamily.Monospace, fontSize = 11.sp)
                 }
             }
         } else {
@@ -134,11 +136,11 @@ fun RepeaterScreen(
                 modifier = Modifier
                     .weight(1f)
                     .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 // Request Crafting Section
                 CyberCard(borderColor = CyberCyan) {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -146,7 +148,7 @@ fun RepeaterScreen(
                         ) {
                             Text(
                                 text = "REQUEST CRAFTER",
-                                fontSize = 11.sp,
+                                fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = CyberCyan,
                                 fontFamily = FontFamily.Monospace
@@ -165,33 +167,34 @@ fun RepeaterScreen(
                                 colors = ButtonDefaults.buttonColors(containerColor = NeonGreen, contentColor = Color.Black),
                                 shape = RoundedCornerShape(4.dp),
                                 enabled = !isLoading,
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
                                 modifier = Modifier.testTag("send_repeater_request_button")
                             ) {
                                 if (isLoading) {
-                                    CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.Black, strokeWidth = 2.dp)
+                                    CircularProgressIndicator(modifier = Modifier.size(14.dp), color = Color.Black, strokeWidth = 2.dp)
                                 } else {
-                                    Icon(Icons.Default.Send, contentDescription = "Send", modifier = Modifier.size(14.dp))
+                                    Icon(Icons.Default.Send, contentDescription = "Send", modifier = Modifier.size(12.dp))
                                     Spacer(modifier = Modifier.width(4.dp))
-                                    Text("SEND REQUEST", fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                                    Text("SEND REQUEST", fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
                                 }
                             }
                         }
 
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             OutlinedTextField(
                                 value = method,
                                 onValueChange = { method = it },
-                                modifier = Modifier.width(90.dp),
-                                textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = CyberCyan),
-                                label = { Text("Method", fontSize = 10.sp) }
+                                modifier = Modifier.width(85.dp),
+                                textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = CyberCyan),
+                                label = { Text("Method", fontSize = 9.sp) }
                             )
 
                             OutlinedTextField(
                                 value = url,
                                 onValueChange = { url = it },
                                 modifier = Modifier.weight(1f),
-                                textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = OnCyberDark),
-                                label = { Text("Target URL", fontSize = 10.sp) }
+                                textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = OnCyberDark),
+                                label = { Text("Target URL", fontSize = 9.sp) }
                             )
                         }
 
@@ -200,9 +203,9 @@ fun RepeaterScreen(
                             onValueChange = { headersJson = it },
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(75.dp),
-                            textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = OnCyberDark),
-                            label = { Text("Headers (JSON Format)", fontSize = 10.sp) }
+                                .height(60.dp),
+                            textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = OnCyberDark),
+                            label = { Text("Headers (JSON Format)", fontSize = 9.sp) }
                         )
 
                         OutlinedTextField(
@@ -210,16 +213,16 @@ fun RepeaterScreen(
                             onValueChange = { body = it },
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(100.dp),
-                            textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = OnCyberDark),
-                            label = { Text("Request Body Payload", fontSize = 10.sp) }
+                                .height(75.dp),
+                            textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = OnCyberDark),
+                            label = { Text("Request Body Payload", fontSize = 9.sp) }
                         )
                     }
                 }
 
                 // Response Inspector Section
                 CyberCard(borderColor = NeonGreen) {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -227,11 +230,11 @@ fun RepeaterScreen(
                         ) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
                                 Text(
                                     text = "RESPONSE INSPECTOR",
-                                    fontSize = 11.sp,
+                                    fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = NeonGreen,
                                     fontFamily = FontFamily.Monospace
@@ -240,7 +243,7 @@ fun RepeaterScreen(
                                     StatusCodeBadge(statusCode = code)
                                 }
                                 activeTab.lastResponseTimeMs?.let { time ->
-                                    Text("$time ms", fontSize = 11.sp, color = OnCyberSurfaceMuted, fontFamily = FontFamily.Monospace)
+                                    Text("$time ms", fontSize = 10.sp, color = OnCyberSurfaceMuted, fontFamily = FontFamily.Monospace)
                                 }
                             }
 
@@ -252,9 +255,9 @@ fun RepeaterScreen(
                                             .background(if (inspectTabMode == mode) CyberSurfaceVariant else CyberSurface)
                                             .border(0.5.dp, if (inspectTabMode == mode) CyberCyan else CyberBorder, RoundedCornerShape(2.dp))
                                             .clickable { inspectTabMode = mode }
-                                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                                            .padding(horizontal = 5.dp, vertical = 2.dp)
                                     ) {
-                                        Text(mode, fontSize = 9.sp, fontFamily = FontFamily.Monospace, color = if (inspectTabMode == mode) CyberCyan else OnCyberSurfaceMuted)
+                                        Text(mode, fontSize = 8.5.sp, fontFamily = FontFamily.Monospace, color = if (inspectTabMode == mode) CyberCyan else OnCyberSurfaceMuted)
                                     }
                                 }
                             }
@@ -264,7 +267,7 @@ fun RepeaterScreen(
                         activeTab.lastResponseHeadersJson?.let { h ->
                             Text(
                                 text = "Headers: $h",
-                                fontSize = 10.sp,
+                                fontSize = 9.sp,
                                 fontFamily = FontFamily.Monospace,
                                 color = OnCyberSurfaceMuted,
                                 maxLines = 2
@@ -275,17 +278,17 @@ fun RepeaterScreen(
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .heightIn(min = 120.dp, max = 220.dp)
+                                .heightIn(min = 100.dp, max = 200.dp)
                                 .background(CyberDarkBg)
                                 .border(1.dp, CyberBorder, RoundedCornerShape(4.dp))
-                                .padding(8.dp)
+                                .padding(6.dp)
                                 .verticalScroll(rememberScrollState())
                         ) {
                             val displayText = activeTab.lastResponseBody ?: "No response received yet. Click 'SEND REQUEST' to execute."
                             Text(
                                 text = displayText,
                                 color = if (activeTab.lastResponseBody != null) OnCyberDark else OnCyberSurfaceMuted,
-                                fontSize = 11.sp,
+                                fontSize = 10.sp,
                                 fontFamily = FontFamily.Monospace
                             )
                         }

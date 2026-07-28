@@ -35,13 +35,13 @@ fun MethodBadge(method: String, modifier: Modifier = Modifier) {
             .clip(RoundedCornerShape(4.dp))
             .background(bgColor)
             .border(1.dp, textColor.copy(alpha = 0.5f), RoundedCornerShape(4.dp))
-            .padding(horizontal = 8.dp, vertical = 2.dp),
+            .padding(horizontal = 6.dp, vertical = 2.dp),
         contentAlignment = Alignment.Center
     ) {
         Text(
             text = method.uppercase(),
             color = textColor,
-            fontSize = 11.sp,
+            fontSize = 10.sp,
             fontWeight = FontWeight.Bold,
             fontFamily = FontFamily.Monospace
         )
@@ -63,13 +63,13 @@ fun StatusCodeBadge(statusCode: Int, modifier: Modifier = Modifier) {
             .clip(RoundedCornerShape(4.dp))
             .background(bgColor)
             .border(0.5.dp, textColor.copy(alpha = 0.4f), RoundedCornerShape(4.dp))
-            .padding(horizontal = 6.dp, vertical = 2.dp),
+            .padding(horizontal = 5.dp, vertical = 2.dp),
         contentAlignment = Alignment.Center
     ) {
         Text(
             text = statusCode.toString(),
             color = textColor,
-            fontSize = 11.sp,
+            fontSize = 10.sp,
             fontWeight = FontWeight.Bold,
             fontFamily = FontFamily.Monospace
         )
@@ -86,16 +86,16 @@ fun CyberCard(
     content: @Composable ColumnScope.() -> Unit
 ) {
     var baseModifier = modifier
-        .clip(RoundedCornerShape(12.dp))
+        .clip(RoundedCornerShape(10.dp))
         .background(backgroundColor)
-        .border(1.dp, borderColor, RoundedCornerShape(12.dp))
+        .border(1.dp, borderColor, RoundedCornerShape(10.dp))
 
     if (accentLeftColor != null) {
         baseModifier = baseModifier.drawWithContent {
             drawContent()
             drawRect(
                 color = accentLeftColor,
-                size = androidx.compose.ui.geometry.Size(12.dp.toPx(), size.height)
+                size = androidx.compose.ui.geometry.Size(10.dp.toPx(), size.height)
             )
         }
     }
@@ -107,7 +107,7 @@ fun CyberCard(
     }
 
     Column(
-        modifier = finalModifier.padding(14.dp),
+        modifier = finalModifier.padding(10.dp),
         content = content
     )
 }

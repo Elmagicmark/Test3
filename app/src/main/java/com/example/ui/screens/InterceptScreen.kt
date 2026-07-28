@@ -47,8 +47,8 @@ fun InterceptScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+            .padding(10.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         // Intercept Status & Control Bar
         CyberCard(
@@ -61,26 +61,26 @@ fun InterceptScreen(
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     Icon(
                         imageVector = if (isInterceptEnabled) Icons.Default.PauseCircle else Icons.Default.PlayCircle,
                         contentDescription = "Intercept Status",
                         tint = if (isInterceptEnabled) WarningCrimson else NeonGreen,
-                        modifier = Modifier.size(24.dp)
+                        modifier = Modifier.size(20.dp)
                     )
                     Column {
                         Text(
                             text = "INTERCEPT MODE",
                             color = OnCyberDark,
-                            fontSize = 14.sp,
+                            fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
                             fontFamily = FontFamily.Monospace
                         )
                         Text(
                             text = if (isInterceptEnabled) "INTERCEPT IS ON - Holding Request" else "INTERCEPT IS OFF - Traffic Passthrough",
                             color = if (isInterceptEnabled) WarningCrimson else OnCyberSurfaceMuted,
-                            fontSize = 11.sp,
+                            fontSize = 10.sp,
                             fontFamily = FontFamily.Monospace
                         )
                     }
@@ -115,22 +115,22 @@ fun InterceptScreen(
                             imageVector = Icons.Default.Shield,
                             contentDescription = "Empty",
                             tint = OnCyberSurfaceMuted,
-                            modifier = Modifier.size(48.dp)
+                            modifier = Modifier.size(40.dp)
                         )
-                        Spacer(modifier = Modifier.height(12.dp))
+                        Spacer(modifier = Modifier.height(8.dp))
                         Text(
                             text = "NO INTERCEPTED REQUESTS QUEUED",
                             color = OnCyberSurfaceMuted,
-                            fontSize = 14.sp,
+                            fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
                             fontFamily = FontFamily.Monospace
                         )
                         Text(
                             text = "Turn Intercept ON to pause live client HTTP/HTTPS requests",
                             color = OnCyberSurfaceMuted.copy(alpha = 0.7f),
-                            fontSize = 11.sp,
+                            fontSize = 10.sp,
                             fontFamily = FontFamily.Monospace,
-                            modifier = Modifier.padding(top = 4.dp)
+                            modifier = Modifier.padding(top = 2.dp)
                         )
                     }
                 }
@@ -145,7 +145,7 @@ fun InterceptScreen(
                 Text(
                     text = "QUEUED REQUESTS (${interceptedList.size})",
                     color = CyberCyan,
-                    fontSize = 12.sp,
+                    fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = FontFamily.Monospace
                 )
@@ -153,12 +153,13 @@ fun InterceptScreen(
                 OutlinedButton(
                     onClick = { onForwardAll() },
                     shape = RoundedCornerShape(4.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, NeonGreen)
+                    border = androidx.compose.foundation.BorderStroke(1.dp, NeonGreen),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
                 ) {
                     Text(
                         text = "FORWARD ALL",
                         color = NeonGreen,
-                        fontSize = 11.sp,
+                        fontSize = 10.sp,
                         fontFamily = FontFamily.Monospace
                     )
                 }
@@ -168,8 +169,8 @@ fun InterceptScreen(
             LazyColumn(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(120.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
+                    .heightIn(max = 140.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 items(interceptedList) { item ->
                     val isSelected = item.id == selectedItem?.id
@@ -182,7 +183,7 @@ fun InterceptScreen(
                                 if (isSelected) CyberCyan else CyberBorder,
                                 RoundedCornerShape(4.dp)
                             )
-                            .padding(8.dp)
+                            .padding( horizontal = 6.dp, vertical = 4.dp)
                     ) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -190,7 +191,7 @@ fun InterceptScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Row(
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier.weight(1f)
                             ) {
@@ -203,10 +204,10 @@ fun InterceptScreen(
                                         Text(
                                             text = "RESP ${item.statusCode}",
                                             color = WarningCrimson,
-                                            fontSize = 10.sp,
+                                            fontSize = 9.sp,
                                             fontWeight = FontWeight.Bold,
                                             fontFamily = FontFamily.Monospace,
-                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
                                         )
                                     }
                                 } else {
@@ -215,18 +216,19 @@ fun InterceptScreen(
                                 Text(
                                     text = item.url,
                                     color = OnCyberDark,
-                                    fontSize = 12.sp,
+                                    fontSize = 10.sp,
                                     maxLines = 1,
                                     fontFamily = FontFamily.Monospace
                                 )
                             }
                             Button(
                                 onClick = { selectedItem = item },
-                                colors = ButtonDefaults.buttonColors(containerColor = CyberSurfaceVariant)
+                                colors = ButtonDefaults.buttonColors(containerColor = CyberSurfaceVariant),
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
                             ) {
                                 Text(
                                     text = if (isSelected) "Editing" else "Edit",
-                                    fontSize = 10.sp,
+                                    fontSize = 9.sp,
                                     color = if (isSelected) CyberCyan else OnCyberDark
                                 )
                             }
@@ -248,31 +250,31 @@ fun InterceptScreen(
                 ) {
                     Column(
                         modifier = Modifier.fillMaxSize(),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         Text(
                             text = if (req.isResponse) "SERVER RESPONSE INTERCEPTED (MODIFIED BEFORE CLIENT)" else "CLIENT REQUEST INTERCEPTED (MODIFIED BEFORE SERVER)",
                             color = if (req.isResponse) WarningCrimson else CyberCyan,
-                            fontSize = 11.sp,
+                            fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
                             fontFamily = FontFamily.Monospace
                         )
 
                         // Method & URL row
                         Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             OutlinedTextField(
                                 value = editableMethod,
                                 onValueChange = { editableMethod = it },
-                                modifier = Modifier.width(100.dp),
+                                modifier = Modifier.width(90.dp),
                                 textStyle = LocalTextStyle.current.copy(
                                     fontFamily = FontFamily.Monospace,
-                                    fontSize = 12.sp,
+                                    fontSize = 10.sp,
                                     color = if (req.isResponse) WarningCrimson else CyberCyan
                                 ),
-                                label = { Text(if (req.isResponse) "Status" else "Method", fontSize = 10.sp) }
+                                label = { Text(if (req.isResponse) "Status" else "Method", fontSize = 9.sp) }
                             )
 
                             OutlinedTextField(
@@ -281,10 +283,10 @@ fun InterceptScreen(
                                 modifier = Modifier.weight(1f),
                                 textStyle = LocalTextStyle.current.copy(
                                     fontFamily = FontFamily.Monospace,
-                                    fontSize = 12.sp,
+                                    fontSize = 10.sp,
                                     color = OnCyberDark
                                 ),
-                                label = { Text("Target URL", fontSize = 10.sp) }
+                                label = { Text("Target URL", fontSize = 9.sp) }
                             )
                         }
 
@@ -294,13 +296,13 @@ fun InterceptScreen(
                             onValueChange = { editableHeaders = it },
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(80.dp),
+                                .height(65.dp),
                             textStyle = LocalTextStyle.current.copy(
                                 fontFamily = FontFamily.Monospace,
-                                fontSize = 11.sp,
+                                fontSize = 10.sp,
                                 color = OnCyberDark
                             ),
-                            label = { Text(if (req.isResponse) "Response Headers (JSON)" else "Request Headers (JSON)", fontSize = 10.sp) }
+                            label = { Text(if (req.isResponse) "Response Headers (JSON)" else "Request Headers (JSON)", fontSize = 9.sp) }
                         )
 
                         // Body Text Field
@@ -312,10 +314,10 @@ fun InterceptScreen(
                                 .weight(1f),
                             textStyle = LocalTextStyle.current.copy(
                                 fontFamily = FontFamily.Monospace,
-                                fontSize = 11.sp,
+                                fontSize = 10.sp,
                                 color = OnCyberDark
                             ),
-                            label = { Text(if (req.isResponse) "Response Body (Spoof Payload)" else "Request Body", fontSize = 10.sp) }
+                            label = { Text(if (req.isResponse) "Response Body (Spoof Payload)" else "Request Body", fontSize = 9.sp) }
                         )
 
                         // Action Buttons: Forward, Drop, Send to Repeater

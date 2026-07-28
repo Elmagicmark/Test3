@@ -197,13 +197,13 @@ fun HistoryScreen(
         if (filteredList.isEmpty()) {
             CyberCard(modifier = Modifier.fillMaxWidth().weight(1f)) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("No transactions match current query filter", color = OnCyberSurfaceMuted, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+                    Text("No transactions match current query filter", color = OnCyberSurfaceMuted, fontFamily = FontFamily.Monospace, fontSize = 11.sp)
                 }
             }
         } else {
             LazyColumn(
                 modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
+                verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 items(filteredList) { tx ->
                     val isChecked = selectedIds.contains(tx.id)
@@ -224,39 +224,45 @@ fun HistoryScreen(
                                 colors = CheckboxDefaults.colors(checkedColor = CyberCyan)
                             )
 
-                            Column(modifier = Modifier.weight(1f).padding(horizontal = 4.dp)) {
+                            Column(modifier = Modifier.weight(1f).padding(horizontal = 2.dp)) {
                                 Row(
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     MethodBadge(method = tx.method)
                                     StatusCodeBadge(statusCode = tx.statusCode)
                                     Text(
                                         text = "${tx.responseTimeMs} ms",
-                                        fontSize = 10.sp,
+                                        fontSize = 9.sp,
                                         fontFamily = FontFamily.Monospace,
                                         color = OnCyberSurfaceMuted
                                     )
                                 }
-                                Spacer(modifier = Modifier.height(4.dp))
+                                Spacer(modifier = Modifier.height(2.dp))
                                 Text(
                                     text = tx.url,
                                     color = OnCyberDark,
-                                    fontSize = 12.sp,
+                                    fontSize = 10.sp,
                                     maxLines = 1,
                                     fontFamily = FontFamily.Monospace
                                 )
                             }
 
                             Row {
-                                IconButton(onClick = {
-                                    onSendToRepeater(tx.method, tx.url, tx.requestHeadersJson, tx.requestBody)
-                                    Toast.makeText(context, "Sent request to Repeater Workbench", Toast.LENGTH_SHORT).show()
-                                }) {
-                                    Icon(Icons.Default.Repeat, contentDescription = "Send to Repeater", tint = NeonGreen, modifier = Modifier.size(20.dp))
+                                IconButton(
+                                    onClick = {
+                                        onSendToRepeater(tx.method, tx.url, tx.requestHeadersJson, tx.requestBody)
+                                        Toast.makeText(context, "Sent request to Repeater Workbench", Toast.LENGTH_SHORT).show()
+                                    },
+                                    modifier = Modifier.size(32.dp)
+                                ) {
+                                    Icon(Icons.Default.Repeat, contentDescription = "Send to Repeater", tint = NeonGreen, modifier = Modifier.size(16.dp))
                                 }
-                                IconButton(onClick = { onDelete(tx.id) }) {
-                                    Icon(Icons.Default.DeleteOutline, contentDescription = "Delete Log", tint = WarningCrimson, modifier = Modifier.size(20.dp))
+                                IconButton(
+                                    onClick = { onDelete(tx.id) },
+                                    modifier = Modifier.size(32.dp)
+                                ) {
+                                    Icon(Icons.Default.DeleteOutline, contentDescription = "Delete Log", tint = WarningCrimson, modifier = Modifier.size(16.dp))
                                 }
                             }
                         }

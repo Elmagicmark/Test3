@@ -23,6 +23,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.local.HttpTransactionEntity
@@ -279,40 +280,44 @@ fun TargetSiteMapScreen(
                             ) {
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    modifier = Modifier.weight(1f)
                                 ) {
                                     Icon(
                                         imageVector = if (isExpanded) Icons.Default.KeyboardArrowDown else Icons.AutoMirrored.Filled.ArrowRight,
                                         contentDescription = "Expand",
                                         tint = CyberCyan,
-                                        modifier = Modifier.size(18.dp)
+                                        modifier = Modifier.size(16.dp)
                                     )
 
                                     Icon(
                                         imageVector = Icons.Default.Dns,
                                         contentDescription = "Host",
                                         tint = NeonAmber,
-                                        modifier = Modifier.size(16.dp)
+                                        modifier = Modifier.size(14.dp)
                                     )
 
                                     Text(
                                         text = hostData.host,
                                         color = OnCyberDark,
-                                        fontSize = 12.sp,
+                                        fontSize = 10.sp,
                                         fontWeight = FontWeight.Bold,
-                                        fontFamily = FontFamily.Monospace
+                                        fontFamily = FontFamily.Monospace,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f, fill = false)
                                     )
 
                                     Box(
                                         modifier = Modifier
                                             .clip(RoundedCornerShape(3.dp))
                                             .background(if (hostData.isScopeMatch) Color(0xFF003814) else Color(0xFF380000))
-                                            .padding(horizontal = 4.dp, vertical = 2.dp)
+                                            .padding(horizontal = 3.dp, vertical = 1.dp)
                                     ) {
                                         Text(
                                             text = if (hostData.isScopeMatch) "IN-SCOPE" else "OUT-OF-SCOPE",
                                             color = if (hostData.isScopeMatch) NeonGreen else WarningCrimson,
-                                            fontSize = 8.sp,
+                                            fontSize = 7.5.sp,
                                             fontWeight = FontWeight.Bold,
                                             fontFamily = FontFamily.Monospace
                                         )
@@ -360,7 +365,9 @@ fun TargetSiteMapScreen(
                                                     color = OnCyberDark,
                                                     fontSize = 11.sp,
                                                     fontFamily = FontFamily.Monospace,
-                                                    fontWeight = FontWeight.SemiBold
+                                                    fontWeight = FontWeight.SemiBold,
+                                                     maxLines = 1,
+                                                     overflow = TextOverflow.Ellipsis
                                                 )
 
                                                 if (node.isCrawledDiscovered) {

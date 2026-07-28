@@ -181,6 +181,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         repository.toggleInterceptMethod(method)
     }
 
+    fun simulateTestInterceptRequest() {
+        repository.simulateTestInterceptRequest()
+    }
+
     fun dropInterceptedRequest(id: Long) {
         viewModelScope.launch {
             repository.dropInterceptedRequest(id)

@@ -302,6 +302,9 @@ class MainActivity : ComponentActivity() {
                                 onSendToRepeater = { method, url, headers, body ->
                                     mainViewModel.sendToRepeater(method, url, headers, body)
                                     navController.navigate(NavRoutes.REPEATER)
+                                },
+                                onSimulateTestIntercept = {
+                                    mainViewModel.simulateTestInterceptRequest()
                                 }
                             )
                         }

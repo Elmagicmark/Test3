@@ -242,6 +242,28 @@ class ProxyRepository(
         updateProxySettings(newSettings)
     }
 
+    fun simulateTestInterceptRequest(
+        method: String = "POST",
+        url: String = "https://api.target-app.internal/v1/auth/login",
+        headersJson: String = "{\"Host\":\"api.target-app.internal\",\"User-Agent\":\"InterceptX-Test/1.0\",\"Content-Type\":\"application/json\"}",
+        body: String = "{\"username\":\"admin_sec\",\"auth_token\":\"dG9rZW5fYmFzZTY0\"}"
+    ) {
+        scope.launch(Dispatchers.IO) {
+            val entity = InterceptedRequestEntity(
+                method = method,
+                url = url,
+                headersJson = headersJson,
+                body = body,
+                isResponse = false,
+                statusCode = 200
+            )
+            val id = addInterceptedRequest(entity)
+            pendingIntercepts[id] = { action ->
+                // Simulation test callback
+            }
+        }
+    }
+
     suspend fun forwardAllIntercepted() {
         pendingIntercepts.forEach { (id, callback) ->
             val entity = interceptDao.getInterceptedById(id)

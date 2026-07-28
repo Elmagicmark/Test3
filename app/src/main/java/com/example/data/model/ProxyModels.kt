@@ -15,7 +15,8 @@ data class ProxySettings(
 ) {
     fun shouldInterceptMethod(method: String): Boolean {
         if (method.equals("CONNECT", ignoreCase = true)) return false
-        return interceptMethods.contains(method.uppercase())
+        if (interceptMethods.isEmpty()) return true
+        return interceptMethods.any { it.equals(method, ignoreCase = true) }
     }
 }
 

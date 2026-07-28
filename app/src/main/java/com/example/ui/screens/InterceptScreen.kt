@@ -40,6 +40,7 @@ fun InterceptScreen(
     onDrop: (Long) -> Unit,
     onForwardAll: () -> Unit,
     onSendToRepeater: (String, String, String, String) -> Unit,
+    onSimulateTestIntercept: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     var selectedItem by remember { mutableStateOf<InterceptedRequestEntity?>(null) }
@@ -195,6 +196,16 @@ fun InterceptScreen(
                             fontFamily = FontFamily.Monospace,
                             modifier = Modifier.padding(top = 2.dp)
                         )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Button(
+                            onClick = { onSimulateTestIntercept?.invoke() },
+                            colors = ButtonDefaults.buttonColors(containerColor = CyberCyan, contentColor = Color.Black),
+                            shape = RoundedCornerShape(4.dp)
+                        ) {
+                            Icon(Icons.Default.AddAlert, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("GENERATE TEST INTERCEPT REQUEST", fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                        }
                     }
                 }
             }

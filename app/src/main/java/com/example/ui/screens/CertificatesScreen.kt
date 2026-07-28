@@ -71,10 +71,24 @@ fun CertificatesScreen(
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         Button(
                             onClick = {
+                                val result = com.example.util.CertificateManager.installCertificateInSystem(context)
+                                Toast.makeText(context, result.second, Toast.LENGTH_SHORT).show()
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = NeonAmber, contentColor = Color.Black),
+                            shape = RoundedCornerShape(4.dp),
+                            modifier = Modifier.testTag("install_ca_cert_button")
+                        ) {
+                            Icon(Icons.Default.Security, contentDescription = "Install System", modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("INSTALL IN SYSTEM", fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                        }
+
+                        OutlinedButton(
+                            onClick = {
                                 val result = com.example.util.CertificateManager.exportCertificateToDownloads(context)
                                 Toast.makeText(context, result.second, Toast.LENGTH_LONG).show()
                             },
-                            colors = ButtonDefaults.buttonColors(containerColor = NeonAmber, contentColor = Color.Black),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = NeonAmber),
                             shape = RoundedCornerShape(4.dp),
                             modifier = Modifier.testTag("export_ca_cert_button")
                         ) {
@@ -83,17 +97,13 @@ fun CertificatesScreen(
                             Text("EXPORT (.CRT & .PEM)", fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
                         }
 
-                        OutlinedButton(
+                        IconButton(
                             onClick = {
                                 com.example.util.CertificateManager.shareOrInstallCertificate(context)
                             },
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = NeonAmber),
-                            shape = RoundedCornerShape(4.dp),
-                            modifier = Modifier.testTag("install_ca_cert_button")
+                            modifier = Modifier.testTag("share_ca_cert_button")
                         ) {
-                            Icon(Icons.Default.Share, contentDescription = "Install/Share", modifier = Modifier.size(14.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("INSTALL / SHARE", fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                            Icon(Icons.Default.Share, contentDescription = "Share", tint = NeonAmber)
                         }
                     }
                 }

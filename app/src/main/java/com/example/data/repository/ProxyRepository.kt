@@ -92,6 +92,11 @@ class ProxyRepository(
                     saveTransaction(tx)
                 }
             },
+            onInterceptCaptured = { req ->
+                scope.launch(Dispatchers.IO) {
+                    addInterceptedRequest(req)
+                }
+            },
             onStatsUpdated = { bytes, connDelta ->
                 val curr = _proxyStats.value
                 val newActive = (curr.activeConnections + connDelta).coerceAtLeast(0)

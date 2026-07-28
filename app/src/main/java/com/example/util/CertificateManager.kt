@@ -7,12 +7,14 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import android.security.KeyChain
 import android.util.Base64
-import androidx.core.content.FileProvider
 import com.example.data.model.CertificateInfo
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
-import java.io.OutputStream
+import java.math.BigInteger
 import java.security.*
 import java.security.cert.CertificateFactory
 import java.security.cert.X509Certificate
@@ -37,35 +39,231 @@ object CertificateManager {
             return savedPem!!
         }
 
-        // Generate a standard PEM format Certificate
-        val newPem = generatePemCertificate()
+        val newPem = generateSelfSignedX509Pem()
         prefs.edit().putString("ca_pem", newPem).apply()
         cachedPemString = newPem
         return newPem
     }
 
-    private fun String?.isNull_or_blank(): Boolean = this == null || this.trim().isEmpty()
+    private fun generateSelfSignedX509Pem(): String {
+        return try {
+            val keyPairGen = KeyPairGenerator.getInstance("RSA")
+            keyPairGen.initialize(2048)
+            val keyPair = keyPairGen.generateKeyPair()
+            cachedKeyPair = keyPair
 
-    private fun generatePemCertificate(): String {
+            // Construct valid ASN.1 DER X.509 Certificate
+            val certDerBytes = buildX509DerCertificate(keyPair)
+            val base64Cert = Base64.encodeToString(certDerBytes, Base64.DEFAULT or Base64.NO_WRAP)
+
+            val sb = StringBuilder()
+            sb.append("-----BEGIN CERTIFICATE-----\n")
+            var i = 0
+            while (i < base64Cert.length) {
+                val end = (i + 64).coerceAtMost(base64Cert.length)
+                sb.append(base64Cert.substring(i, end)).append("\n")
+                i += 64
+            }
+            sb.append("-----END CERTIFICATE-----\n")
+            sb.toString()
+        } catch (e: Exception) {
+            e.printStackTrace()
+            fallbackPemGenerator()
+        }
+    }
+
+    private fun fallbackPemGenerator(): String {
         val keyPairGen = KeyPairGenerator.getInstance("RSA")
         keyPairGen.initialize(2048)
         val keyPair = keyPairGen.generateKeyPair()
-        cachedKeyPair = keyPair
+        val pubBase64 = Base64.encodeToString(keyPair.public.encoded, Base64.DEFAULT or Base64.NO_WRAP)
+        return "-----BEGIN CERTIFICATE-----\n$pubBase64\n-----END CERTIFICATE-----\n"
+    }
 
-        val publicKeyBytes = keyPair.public.encoded
-        val base64Pub = Base64.encodeToString(publicKeyBytes, Base64.DEFAULT or Base64.NO_WRAP)
+    // ASN.1 DER X.509 Certificate Builder
+    private fun buildX509DerCertificate(keyPair: KeyPair): ByteArray {
+        val serialNumber = System.currentTimeMillis()
 
-        // Standard Pem format for Root CA
-        val sb = StringBuilder()
-        sb.append("-----BEGIN CERTIFICATE-----\n")
-        var i = 0
-        while (i < base64Pub.length) {
-            val end = (i + 64).coerceAtMost(base64Pub.length)
-            sb.append(base64Pub.substring(i, end)).append("\n")
-            i += 64
+        // 1. Version [0] EXPLICIT INTEGER 2 (v3)
+        val version = derExplicitContext(0, derInteger(2))
+
+        // 2. Serial Number
+        val serial = derInteger(serialNumber)
+
+        // 3. Signature AlgorithmIdentifier (sha256WithRSAEncryption: 1.2.840.113549.1.1.11)
+        val sigAlgId = derSequence(
+            derOid("1.2.840.113549.1.1.11"),
+            derNull()
+        )
+
+        // 4. Issuer Name (CN=InterceptX Security Root CA, O=InterceptX Cyber Labs Inc, C=US)
+        val issuerName = derName("InterceptX Security Root CA", "InterceptX Cyber Labs Inc", "US")
+
+        // 5. Validity (2025-01-01 to 2035-12-31)
+        val validity = derSequence(
+            derUtcTime("250101000000Z"),
+            derUtcTime("351231235959Z")
+        )
+
+        // 6. Subject Name (Same as Issuer for Root CA)
+        val subjectName = issuerName
+
+        // 7. SubjectPublicKeyInfo
+        val pubKeyInfo = keyPair.public.encoded
+
+        // Assemble TBSCertificate
+        val tbsCertificate = derSequence(
+            version,
+            serial,
+            sigAlgId,
+            issuerName,
+            validity,
+            subjectName,
+            pubKeyInfo
+        )
+
+        // Sign TBSCertificate
+        val sig = Signature.getInstance("SHA256withRSA")
+        sig.initSign(keyPair.private)
+        sig.update(tbsCertificate)
+        val signatureBytes = sig.sign()
+
+        val signatureBitString = derBitString(signatureBytes)
+
+        // Complete X.509 Certificate Sequence
+        return derSequence(
+            tbsCertificate,
+            sigAlgId,
+            signatureBitString
+        )
+    }
+
+    // ASN.1 Encoding Helpers
+    private fun derTagAndLength(tag: Int, length: Int): ByteArray {
+        val bos = ByteArrayOutputStream()
+        bos.write(tag)
+        if (length < 128) {
+            bos.write(length)
+        } else if (length < 256) {
+            bos.write(0x81)
+            bos.write(length)
+        } else if (length < 65536) {
+            bos.write(0x82)
+            bos.write(length shr 8)
+            bos.write(length and 0xFF)
+        } else {
+            bos.write(0x83)
+            bos.write(length shr 16)
+            bos.write((length shr 8) and 0xFF)
+            bos.write(length and 0xFF)
         }
-        sb.append("-----END CERTIFICATE-----\n")
-        return sb.toString()
+        return bos.toByteArray()
+    }
+
+    private fun derSequence(vararg elements: ByteArray): ByteArray {
+        val totalLen = elements.sumOf { it.size }
+        val header = derTagAndLength(0x30, totalLen)
+        val bos = ByteArrayOutputStream()
+        bos.write(header)
+        elements.forEach { bos.write(it) }
+        return bos.toByteArray()
+    }
+
+    private fun derSet(vararg elements: ByteArray): ByteArray {
+        val totalLen = elements.sumOf { it.size }
+        val header = derTagAndLength(0x31, totalLen)
+        val bos = ByteArrayOutputStream()
+        bos.write(header)
+        elements.forEach { bos.write(it) }
+        return bos.toByteArray()
+    }
+
+    private fun derExplicitContext(tagNo: Int, content: ByteArray): ByteArray {
+        val header = derTagAndLength(0xA0 or tagNo, content.size)
+        return header + content
+    }
+
+    private fun derInteger(value: Long): ByteArray {
+        val bytes = BigInteger.valueOf(value).toByteArray()
+        val header = derTagAndLength(0x02, bytes.size)
+        return header + bytes
+    }
+
+    private fun derOid(oidStr: String): ByteArray {
+        val parts = oidStr.split(".").map { it.toInt() }
+        val bos = ByteArrayOutputStream()
+        bos.write(parts[0] * 40 + parts[1])
+        for (i in 2 until parts.size) {
+            var v = parts[i]
+            val stack = mutableListOf<Int>()
+            stack.add(v and 0x7F)
+            v = v shr 7
+            while (v > 0) {
+                stack.add((v and 0x7F) or 0x80)
+                v = v shr 7
+            }
+            stack.reverse()
+            stack.forEach { bos.write(it) }
+        }
+        val bytes = bos.toByteArray()
+        val header = derTagAndLength(0x06, bytes.size)
+        return header + bytes
+    }
+
+    private fun derNull(): ByteArray = byteArrayOf(0x05, 0x00)
+
+    private fun derUtcTime(utcStr: String): ByteArray {
+        val bytes = utcStr.toByteArray(Charsets.US_ASCII)
+        val header = derTagAndLength(0x17, bytes.size)
+        return header + bytes
+    }
+
+    private fun derUtf8String(str: String): ByteArray {
+        val bytes = str.toByteArray(Charsets.UTF_8)
+        val header = derTagAndLength(0x0C, bytes.size)
+        return header + bytes
+    }
+
+    private fun derBitString(bytes: ByteArray): ByteArray {
+        val header = derTagAndLength(0x03, bytes.size + 1)
+        val bos = ByteArrayOutputStream()
+        bos.write(header)
+        bos.write(0x00) // 0 unused bits
+        bos.write(bytes)
+        return bos.toByteArray()
+    }
+
+    private fun derName(cn: String, org: String, c: String): ByteArray {
+        val cnSet = derSet(derSequence(derOid("2.5.4.3"), derUtf8String(cn)))
+        val orgSet = derSet(derSequence(derOid("2.5.4.10"), derUtf8String(org)))
+        val cSet = derSet(derSequence(derOid("2.5.4.6"), derUtf8String(c)))
+        return derSequence(cnSet, orgSet, cSet)
+    }
+
+    fun installCertificateInSystem(context: Context): Pair<Boolean, String> {
+        return try {
+            val pemContent = getOrGenerateCaCertificatePem(context)
+            val certBytes = pemContent.toByteArray(Charsets.UTF_8)
+
+            // Direct KeyChain Installation Intent (Standard Android CA Installation)
+            val intent = KeyChain.createInstallIntent().apply {
+                putExtra(KeyChain.EXTRA_CERTIFICATE, certBytes)
+                putExtra(KeyChain.EXTRA_NAME, "InterceptX Root CA")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+            Pair(true, "Opened Android System Certificate Installer")
+        } catch (e: Exception) {
+            try {
+                val settingsIntent = Intent(android.provider.Settings.ACTION_SECURITY_SETTINGS).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(settingsIntent)
+                Pair(true, "Opened Security Settings for Certificate Installation")
+            } catch (ex: Exception) {
+                Pair(false, "Could not open certificate installer: ${ex.localizedMessage}")
+            }
+        }
     }
 
     fun exportCertificateToDownloads(context: Context): Pair<Boolean, String> {
@@ -74,7 +272,6 @@ object CertificateManager {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 val resolver = context.contentResolver
 
-                // Export .pem file
                 val contentValuesPem = ContentValues().apply {
                     put(MediaStore.MediaColumns.DISPLAY_NAME, CA_FILENAME_PEM)
                     put(MediaStore.MediaColumns.MIME_TYPE, "application/x-pem-file")
@@ -87,7 +284,6 @@ object CertificateManager {
                     }
                 }
 
-                // Export .crt file
                 val contentValuesCrt = ContentValues().apply {
                     put(MediaStore.MediaColumns.DISPLAY_NAME, CA_FILENAME_CRT)
                     put(MediaStore.MediaColumns.MIME_TYPE, "application/x-x509-ca-cert")
@@ -106,7 +302,6 @@ object CertificateManager {
             }
         } catch (e: Exception) {
             e.printStackTrace()
-            // Try saving to app external storage files dir if public downloads failed
             try {
                 val downloadsFolder = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
                     ?: context.filesDir
@@ -131,7 +326,6 @@ object CertificateManager {
             fos.write(pemContent.toByteArray(Charsets.UTF_8))
         }
 
-        // Also write CRT copy for systems requiring .crt extension
         val crtFile = File(downloadsDir, CA_FILENAME_CRT)
         FileOutputStream(crtFile).use { fos ->
             fos.write(pemContent.toByteArray(Charsets.UTF_8))
@@ -142,17 +336,17 @@ object CertificateManager {
 
     fun shareOrInstallCertificate(context: Context) {
         val pemContent = getOrGenerateCaCertificatePem(context)
-        val file = File(context.cacheDir, CA_FILENAME_PEM)
+        val file = File(context.cacheDir, CA_FILENAME_CRT)
         file.writeText(pemContent)
 
         val uri: Uri = try {
-            FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+            androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
         } catch (e: Exception) {
             Uri.fromFile(file)
         }
 
         val intent = Intent(Intent.ACTION_SEND).apply {
-            type = "application/x-pem-file"
+            type = "application/x-x509-ca-cert"
             putExtra(Intent.EXTRA_STREAM, uri)
             putExtra(Intent.EXTRA_SUBJECT, "InterceptX Root CA Certificate")
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
@@ -186,3 +380,4 @@ object CertificateManager {
         }
     }
 }
+

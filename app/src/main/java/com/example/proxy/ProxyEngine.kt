@@ -2,6 +2,7 @@ package com.example.proxy
 
 import android.util.Log
 import com.example.data.local.HttpTransactionEntity
+import com.example.data.local.InterceptedRequestEntity
 import com.example.data.model.ProxySettings
 import kotlinx.coroutines.*
 import okhttp3.*
@@ -26,6 +27,7 @@ class ProxyEngine {
         settings: ProxySettings,
         scope: CoroutineScope,
         onTransactionCaptured: (HttpTransactionEntity) -> Unit,
+        onInterceptCaptured: (InterceptedRequestEntity) -> Unit,
         onStatsUpdated: (bytes: Long, activeConnIncrement: Int) -> Unit
     ) {
         if (isRunning) stopProxy()
@@ -51,10 +53,11 @@ class ProxyEngine {
                 while (isRunning && !serverSocket!!.isClosed) {
                     try {
                         val clientSocket = serverSocket!!.accept()
+                        clientSocket.soTimeout = 30000
                         onStatsUpdated(0L, 1)
                         executor.execute {
                             try {
-                                handleClientSocket(clientSocket, settings, httpClient, onTransactionCaptured, onStatsUpdated)
+                                handleClientSocket(clientSocket, settings, httpClient, onTransactionCaptured, onInterceptCaptured, onStatsUpdated)
                             } catch (e: Exception) {
                                 Log.e("ProxyEngine", "Client handling error: ${e.message}")
                             } finally {
@@ -126,18 +129,38 @@ class ProxyEngine {
         return builder.build()
     }
 
+    private fun readHeaderLine(input: InputStream): String? {
+        val bos = ByteArrayOutputStream()
+        while (true) {
+            val b = input.read()
+            if (b == -1) {
+                if (bos.size() == 0) return null
+                break
+            }
+            if (b == '\n'.code) {
+                val bytes = bos.toByteArray()
+                if (bytes.isNotEmpty() && bytes.last() == '\r'.code.toByte()) {
+                    return String(bytes, 0, bytes.size - 1, Charsets.UTF_8)
+                }
+                return String(bytes, Charsets.UTF_8)
+            }
+            bos.write(b)
+        }
+        return String(bos.toByteArray(), Charsets.UTF_8)
+    }
+
     private fun handleClientSocket(
         clientSocket: Socket,
         settings: ProxySettings,
         httpClient: OkHttpClient,
         onTransactionCaptured: (HttpTransactionEntity) -> Unit,
+        onInterceptCaptured: (InterceptedRequestEntity) -> Unit,
         onStatsUpdated: (bytes: Long, activeConnIncrement: Int) -> Unit
     ) {
         val inputStream = clientSocket.getInputStream()
         val outputStream = clientSocket.getOutputStream()
-        val reader = BufferedReader(InputStreamReader(inputStream, Charsets.UTF_8))
 
-        val requestLine = reader.readLine() ?: return
+        val requestLine = readHeaderLine(inputStream) ?: return
         Log.d("ProxyEngine", "Incoming request: $requestLine")
 
         val parts = requestLine.split(" ")
@@ -147,14 +170,14 @@ class ProxyEngine {
         val rawUrl = parts[1]
 
         val headersMap = mutableMapOf<String, String>()
-        var line: String?
         var contentLength = 0
-        while (reader.readLine().also { line = it } != null) {
-            if (line.isNullOrBlank()) break
-            val colonIdx = line!!.indexOf(":")
+        while (true) {
+            val line = readHeaderLine(inputStream) ?: break
+            if (line.isBlank()) break
+            val colonIdx = line.indexOf(":")
             if (colonIdx > 0) {
-                val k = line!!.substring(0, colonIdx).trim()
-                val v = line!!.substring(colonIdx + 1).trim()
+                val k = line.substring(0, colonIdx).trim()
+                val v = line.substring(colonIdx + 1).trim()
                 headersMap[k] = v
                 if (k.equals("Content-Length", ignoreCase = true)) {
                     contentLength = v.toIntOrNull() ?: 0
@@ -169,24 +192,35 @@ class ProxyEngine {
         }
 
         // Handle Standard HTTP Proxy request
-        val bodyBuilder = StringBuilder()
+        var requestBodyString = ""
         if (contentLength > 0) {
-            val charBuffer = CharArray(1024)
+            val bodyBytes = ByteArray(contentLength)
             var totalRead = 0
             while (totalRead < contentLength) {
-                val read = reader.read(charBuffer, 0, (contentLength - totalRead).coerceAtMost(1024))
+                val read = inputStream.read(bodyBytes, totalRead, contentLength - totalRead)
                 if (read <= 0) break
-                bodyBuilder.append(charBuffer, 0, read)
                 totalRead += read
             }
+            requestBodyString = String(bodyBytes, 0, totalRead, Charsets.UTF_8)
         }
-        val requestBodyString = bodyBuilder.toString()
 
         val fullUrl = if (rawUrl.startsWith("http://") || rawUrl.startsWith("https://")) {
             rawUrl
         } else {
             val hostHeader = headersMap["Host"] ?: "127.0.0.1"
             "http://$hostHeader$rawUrl"
+        }
+
+        val headersJson = "{" + headersMap.entries.joinToString(",") { "\"${it.key}\":\"${it.value.replace("\"", "\\\"")}\"" } + "}"
+
+        if (settings.isInterceptEnabled) {
+            val interceptEntity = InterceptedRequestEntity(
+                method = method,
+                url = fullUrl,
+                headersJson = headersJson,
+                body = requestBodyString
+            )
+            onInterceptCaptured(interceptEntity)
         }
 
         val startTime = System.currentTimeMillis()
@@ -257,8 +291,6 @@ class ProxyEngine {
 
         val duration = (System.currentTimeMillis() - startTime).toInt()
 
-        val headersJson = "{" + headersMap.entries.joinToString(",") { "\"${it.key}\":\"${it.value.replace("\"", "\\\"")}\"" } + "}"
-
         val tx = HttpTransactionEntity(
             url = fullUrl,
             method = method,
@@ -288,8 +320,9 @@ class ProxyEngine {
         val targetHost = parts[0]
         val targetPort = if (parts.size > 1) parts[1].toIntOrNull() ?: 443 else 443
 
+        var targetSocket: Socket? = null
         try {
-            val targetSocket = if (settings.upstreamProxyEnabled && settings.upstreamProxyHost.isNotBlank()) {
+            targetSocket = if (settings.upstreamProxyEnabled && settings.upstreamProxyHost.isNotBlank()) {
                 val proxy = java.net.Proxy(
                     java.net.Proxy.Type.HTTP,
                     InetSocketAddress(settings.upstreamProxyHost, settings.upstreamProxyPort)
@@ -298,8 +331,11 @@ class ProxyEngine {
                 s.connect(InetSocketAddress(targetHost, targetPort), 10000)
                 s
             } else {
-                Socket(targetHost, targetPort)
+                val s = Socket()
+                s.connect(InetSocketAddress(targetHost, targetPort), 10000)
+                s
             }
+            targetSocket.soTimeout = 30000
 
             // Send 200 Connection Established to client
             val connectOk = "HTTP/1.1 200 Connection Established\r\n\r\n"
@@ -326,11 +362,20 @@ class ProxyEngine {
             t1.start()
             t2.start()
 
+            try {
+                t1.join()
+                t2.join()
+            } catch (_: Exception) {}
+
         } catch (e: Exception) {
             Log.e("ProxyEngine", "CONNECT Tunnel failed to $hostPort: ${e.message}")
-            val errorResp = "HTTP/1.1 502 Bad Gateway\r\n\r\nFailed to connect to $hostPort"
-            outputStream.write(errorResp.toByteArray())
-            outputStream.flush()
+            try {
+                val errorResp = "HTTP/1.1 502 Bad Gateway\r\n\r\nFailed to connect to $hostPort"
+                outputStream.write(errorResp.toByteArray())
+                outputStream.flush()
+            } catch (_: Exception) {}
+        } finally {
+            try { targetSocket?.close() } catch (_: Exception) {}
         }
     }
 

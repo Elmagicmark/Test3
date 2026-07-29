@@ -181,6 +181,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         repository.toggleInterceptMethod(method)
     }
 
+    fun toggleEnforceScopeOnly(enforce: Boolean) {
+        repository.toggleEnforceScopeOnly(enforce)
+    }
+
+    fun toggleIncludeSubdomains(include: Boolean) {
+        repository.toggleIncludeSubdomains(include)
+    }
+
     fun simulateTestInterceptRequest() {
         repository.simulateTestInterceptRequest()
     }

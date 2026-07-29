@@ -40,10 +40,65 @@ class ProxyEngine {
     private val executor = Executors.newCachedThreadPool()
     @Volatile private var isRunning = false
     @Volatile private var currentSettings: ProxySettings = ProxySettings()
+    @Volatile private var activeScopes: List<com.example.data.local.TargetScopeEntity> = emptyList()
 
     fun updateSettings(newSettings: ProxySettings) {
         currentSettings = newSettings
-        Log.d("ProxyEngine", "Settings updated live: isInterceptEnabled=${newSettings.isInterceptEnabled}")
+        Log.d("ProxyEngine", "Settings updated live: isInterceptEnabled=${newSettings.isInterceptEnabled}, enforceScopeOnly=${newSettings.enforceScopeOnly}")
+    }
+
+    fun updateActiveScopes(scopes: List<com.example.data.local.TargetScopeEntity>) {
+        activeScopes = scopes
+        Log.d("ProxyEngine", "Active scope rules updated: count=${scopes.size}")
+    }
+
+    fun isUrlInScope(url: String, settings: ProxySettings, scopes: List<com.example.data.local.TargetScopeEntity>): Boolean {
+        if (!settings.enforceScopeOnly) return true
+
+        val enabledScopes = scopes.filter { it.isEnabled }
+        if (enabledScopes.isEmpty()) return true
+
+        val host = try {
+            val uri = java.net.URI(url)
+            uri.host ?: url.removePrefix("http://").removePrefix("https://").substringBefore("/").substringBefore(":")
+        } catch (_: Exception) {
+            url.removePrefix("http://").removePrefix("https://").substringBefore("/").substringBefore(":")
+        }
+
+        if (host.isBlank()) return true
+
+        val isExcluded = enabledScopes.any { scope ->
+            !scope.isInScope && matchesDomainPattern(host, scope.pattern, settings.includeSubdomains)
+        }
+        if (isExcluded) return false
+
+        val inScopeRules = enabledScopes.filter { it.isInScope }
+        if (inScopeRules.isEmpty()) return true
+
+        return inScopeRules.any { scope ->
+            matchesDomainPattern(host, scope.pattern, settings.includeSubdomains)
+        }
+    }
+
+    private fun matchesDomainPattern(host: String, pattern: String, includeSubdomains: Boolean): Boolean {
+        var cleanPattern = pattern.trim().lowercase()
+        cleanPattern = cleanPattern.removePrefix("http://").removePrefix("https://").removePrefix("*.")
+        val slashIdx = cleanPattern.indexOf('/')
+        if (slashIdx != -1) cleanPattern = cleanPattern.substring(0, slashIdx)
+        val portIdx = cleanPattern.indexOf(':')
+        if (portIdx != -1) cleanPattern = cleanPattern.substring(0, portIdx)
+
+        val cleanHost = host.trim().lowercase()
+
+        if (cleanHost == cleanPattern) return true
+
+        if (includeSubdomains && cleanHost.endsWith(".$cleanPattern")) return true
+
+        return try {
+            Regex(pattern, RegexOption.IGNORE_CASE).containsMatchIn(host)
+        } catch (_: Exception) {
+            false
+        }
     }
 
     fun startProxy(
@@ -244,7 +299,9 @@ class ProxyEngine {
         var execHeadersMap = headersMap.toMap()
         var execBody = requestBodyString
 
-        val shouldInterceptReq = currentSettings.isInterceptEnabled && currentSettings.interceptRequests && currentSettings.shouldInterceptMethod(method)
+        val inScope = isUrlInScope(fullUrl, currentSettings, activeScopes)
+
+        val shouldInterceptReq = inScope && currentSettings.isInterceptEnabled && currentSettings.interceptRequests && currentSettings.shouldInterceptMethod(method)
 
         if (shouldInterceptReq) {
             val latch = java.util.concurrent.CountDownLatch(1)
@@ -370,7 +427,7 @@ class ProxyEngine {
             var execRespHeaderMap = respHeaderMap.toMap()
             var execResponseBodyString = responseBodyString
 
-            val shouldInterceptResp = currentSettings.isInterceptEnabled && currentSettings.interceptResponses && currentSettings.shouldInterceptMethod(execMethod)
+            val shouldInterceptResp = inScope && currentSettings.isInterceptEnabled && currentSettings.interceptResponses && currentSettings.shouldInterceptMethod(execMethod)
 
             if (shouldInterceptResp) {
                 val respLatch = java.util.concurrent.CountDownLatch(1)
@@ -465,20 +522,22 @@ class ProxyEngine {
 
         val execHeadersJson = "{" + execHeadersMap.entries.joinToString(",") { "\"${it.key}\":\"${it.value.replace("\"", "\\\"")}\"" } + "}"
 
-        val tx = HttpTransactionEntity(
-            url = execUrl,
-            method = execMethod,
-            statusCode = statusCode,
-            requestHeadersJson = execHeadersJson,
-            requestBody = execBody,
-            responseHeadersJson = responseHeadersJson,
-            responseBody = responseBodyString,
-            responseTimeMs = duration.toLong(),
-            bytesTransferred = byteCount,
-            isIntercepted = currentSettings.isInterceptEnabled
-        )
+        if (inScope || !currentSettings.enforceScopeOnly) {
+            val tx = HttpTransactionEntity(
+                url = execUrl,
+                method = execMethod,
+                statusCode = statusCode,
+                requestHeadersJson = execHeadersJson,
+                requestBody = execBody,
+                responseHeadersJson = responseHeadersJson,
+                responseBody = responseBodyString,
+                responseTimeMs = duration.toLong(),
+                bytesTransferred = byteCount,
+                isIntercepted = currentSettings.isInterceptEnabled
+            )
 
-        onTransactionCaptured(tx)
+            onTransactionCaptured(tx)
+        }
     }
 
     private fun handleConnectTunnel(

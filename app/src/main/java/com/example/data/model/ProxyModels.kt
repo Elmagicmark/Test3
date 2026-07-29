@@ -11,7 +11,9 @@ data class ProxySettings(
     val sslBypassEnabled: Boolean = true,
     val interceptMethods: Set<String> = setOf("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"),
     val interceptRequests: Boolean = true,
-    val interceptResponses: Boolean = true
+    val interceptResponses: Boolean = true,
+    val enforceScopeOnly: Boolean = false,
+    val includeSubdomains: Boolean = true
 ) {
     fun shouldInterceptMethod(method: String): Boolean {
         if (method.equals("CONNECT", ignoreCase = true)) return false

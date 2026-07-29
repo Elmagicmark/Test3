@@ -48,6 +48,11 @@ class ProxyRepository(
         scope.launch(Dispatchers.IO) {
             seedInitialDataIfEmpty()
         }
+        scope.launch(Dispatchers.IO) {
+            targetScopes.collect { scopes ->
+                proxyEngine.updateActiveScopes(scopes)
+            }
+        }
     }
 
     private suspend fun seedInitialDataIfEmpty() {
@@ -257,6 +262,16 @@ class ProxyRepository(
             current.add(upper)
         }
         val newSettings = _proxySettings.value.copy(interceptMethods = current)
+        updateProxySettings(newSettings)
+    }
+
+    fun toggleEnforceScopeOnly(enforce: Boolean) {
+        val newSettings = _proxySettings.value.copy(enforceScopeOnly = enforce)
+        updateProxySettings(newSettings)
+    }
+
+    fun toggleIncludeSubdomains(include: Boolean) {
+        val newSettings = _proxySettings.value.copy(includeSubdomains = include)
         updateProxySettings(newSettings)
     }
 

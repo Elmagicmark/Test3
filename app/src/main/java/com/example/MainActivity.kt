@@ -361,10 +361,13 @@ class MainActivity : ComponentActivity() {
                             ProjectsScopeScreen(
                                 projects = securityProjects,
                                 scopes = targetScopes,
+                                proxySettings = proxySettings,
                                 onAddProject = { name, desc -> mainViewModel.addSecurityProject(name, desc) },
                                 onDeleteProject = { mainViewModel.deleteProject(it) },
                                 onAddScope = { pattern, isInScope -> mainViewModel.addTargetScope(pattern, isInScope) },
-                                onDeleteScope = { mainViewModel.deleteTargetScope(it) }
+                                onDeleteScope = { mainViewModel.deleteTargetScope(it) },
+                                onToggleEnforceScope = { mainViewModel.toggleEnforceScopeOnly(it) },
+                                onToggleIncludeSubdomains = { mainViewModel.toggleIncludeSubdomains(it) }
                             )
                         }
 

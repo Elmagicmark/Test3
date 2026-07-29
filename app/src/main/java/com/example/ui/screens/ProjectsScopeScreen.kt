@@ -30,10 +30,13 @@ import com.example.ui.theme.*
 fun ProjectsScopeScreen(
     projects: List<SecurityProjectEntity>,
     scopes: List<TargetScopeEntity>,
+    proxySettings: com.example.data.model.ProxySettings = com.example.data.model.ProxySettings(),
     onAddProject: (String, String) -> Unit,
     onDeleteProject: (Long) -> Unit,
     onAddScope: (String, Boolean) -> Unit,
     onDeleteScope: (Long) -> Unit,
+    onToggleEnforceScope: (Boolean) -> Unit = {},
+    onToggleIncludeSubdomains: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var newProjectName by remember { mutableStateOf("") }
@@ -48,6 +51,75 @@ fun ProjectsScopeScreen(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
+        // Target Scope Controls & Settings Card
+        CyberCard(borderColor = NeonAmber) {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "ENFORCE TARGET SCOPE ONLY",
+                            color = NeonAmber,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace
+                        )
+                        Text(
+                            text = if (proxySettings.enforceScopeOnly) "Active: Proxy only logs & intercepts in-scope URLs" else "Disabled: Proxy logs all HTTP traffic",
+                            color = OnCyberSurfaceMuted,
+                            fontSize = 10.sp,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
+                    Switch(
+                        checked = proxySettings.enforceScopeOnly,
+                        onCheckedChange = onToggleEnforceScope,
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.Black,
+                            checkedTrackColor = NeonAmber
+                        ),
+                        modifier = Modifier.testTag("enforce_scope_switch")
+                    )
+                }
+
+                HorizontalDivider(color = CyberBorder, thickness = 0.5.dp)
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "INCLUDE SUBDOMAINS (تضمين النطاقات الفرعية)",
+                            color = CyberCyan,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace
+                        )
+                        Text(
+                            text = if (proxySettings.includeSubdomains) "Enabled: sub.example.com matches example.com" else "Strict: Exact host match required",
+                            color = OnCyberSurfaceMuted,
+                            fontSize = 10.sp,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
+                    Switch(
+                        checked = proxySettings.includeSubdomains,
+                        onCheckedChange = onToggleIncludeSubdomains,
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.Black,
+                            checkedTrackColor = CyberCyan
+                        ),
+                        modifier = Modifier.testTag("include_subdomains_switch")
+                    )
+                }
+            }
+        }
+
         // Target Scope Configuration Section
         CyberCard(borderColor = CyberCyan) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {

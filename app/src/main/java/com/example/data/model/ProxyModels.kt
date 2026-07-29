@@ -10,14 +10,13 @@ data class ProxySettings(
     val upstreamProxyPort: Int = 8080,
     val sslBypassEnabled: Boolean = true,
     val http2Enabled: Boolean = true,
-    val interceptMethods: Set<String> = setOf("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"),
+    val interceptMethods: Set<String> = setOf("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "CONNECT"),
     val interceptRequests: Boolean = true,
     val interceptResponses: Boolean = true,
     val enforceScopeOnly: Boolean = false,
     val includeSubdomains: Boolean = true
 ) {
     fun shouldInterceptMethod(method: String): Boolean {
-        if (method.equals("CONNECT", ignoreCase = true)) return false
         if (interceptMethods.isEmpty()) return true
         return interceptMethods.any { it.equals(method, ignoreCase = true) }
     }

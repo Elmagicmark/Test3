@@ -47,8 +47,8 @@ fun InterceptScreen(
     var selectedItem by remember { mutableStateOf<InterceptedRequestEntity?>(null) }
     var isFetchingResponse by remember { mutableStateOf(false) }
 
-    // Pure HTTP Data Methods (CONNECT is handled automatically by SSL tunnel layer)
-    val allMethods = listOf("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS")
+    // Pure HTTP & Tunnel Methods
+    val allMethods = listOf("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "CONNECT")
 
     // Sync selected item
     LaunchedEffect(interceptedList) {

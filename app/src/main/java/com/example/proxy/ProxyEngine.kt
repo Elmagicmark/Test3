@@ -73,25 +73,25 @@ class ProxyEngine {
 
     private fun cleanDomainPattern(pattern: String): String {
         var s = pattern.trim().lowercase()
-        s = s.removePrefix("http://").removePrefix("https://")
-        s = s.removePrefix("*.").removePrefix(".")
-        s = s.replace(".*", "").replace("\\.", ".")
+        s = s.replace("http://", "").replace("https://", "")
+        s = s.replace(".*", "").replace("\\.", ".").replace("*", "")
+        s = s.replace("\\", "").replace("\"", "").replace("'", "")
         val slashIdx = s.indexOf('/')
         if (slashIdx != -1) s = s.substring(0, slashIdx)
         val portIdx = s.indexOf(':')
         if (portIdx != -1) s = s.substring(0, portIdx)
-        return s.trim()
+        return s.trim().trim('.', ' ')
     }
 
     private fun extractHost(url: String): String {
         if (url.isBlank()) return ""
         var clean = url.trim().lowercase()
-        clean = clean.removePrefix("http://").removePrefix("https://")
+        clean = clean.replace("http://", "").replace("https://", "")
         val slashIdx = clean.indexOf('/')
         if (slashIdx != -1) clean = clean.substring(0, slashIdx)
         val portIdx = clean.indexOf(':')
         if (portIdx != -1) clean = clean.substring(0, portIdx)
-        return clean.trim()
+        return clean.trim().trim('.', ' ')
     }
 
     fun matchesDomainPattern(urlOrHost: String, pattern: String, includeSubdomains: Boolean = true): Boolean {
@@ -321,8 +321,9 @@ class ProxyEngine {
         var execBody = requestBodyString
 
         val inScope = isUrlInScope(fullUrl, currentSettings, activeScopes)
+        val effectiveInScope = if (currentSettings.enforceScopeOnly) inScope else true
 
-        val shouldInterceptReq = inScope && currentSettings.isInterceptEnabled && currentSettings.interceptRequests && currentSettings.shouldInterceptMethod(method)
+        val shouldInterceptReq = effectiveInScope && currentSettings.isInterceptEnabled && currentSettings.interceptRequests && currentSettings.shouldInterceptMethod(method)
 
         if (shouldInterceptReq) {
             val latch = java.util.concurrent.CountDownLatch(1)
@@ -449,7 +450,8 @@ class ProxyEngine {
             var execRespHeaderMap = respHeaderMap.toMap()
             var execResponseBodyString = responseBodyString
 
-            val shouldInterceptResp = inScope && currentSettings.isInterceptEnabled && currentSettings.interceptResponses && currentSettings.shouldInterceptMethod(execMethod)
+            val effectiveInScope = if (currentSettings.enforceScopeOnly) inScope else true
+            val shouldInterceptResp = effectiveInScope && currentSettings.isInterceptEnabled && currentSettings.interceptResponses && currentSettings.shouldInterceptMethod(execMethod)
 
             if (shouldInterceptResp) {
                 val respLatch = java.util.concurrent.CountDownLatch(1)
@@ -571,7 +573,11 @@ class ProxyEngine {
         onInterceptCaptured: (InterceptedRequestEntity, onAction: (InterceptAction) -> Unit) -> Unit,
         onStatsUpdated: (bytes: Long, activeConnIncrement: Int) -> Unit
     ) {
-        if (currentSettings.isInterceptEnabled && currentSettings.shouldInterceptMethod("CONNECT")) {
+        val connectUrl = "https://$hostPort"
+        val inScopeConnect = isUrlInScope(connectUrl, currentSettings, activeScopes)
+        val effectiveInScopeConnect = if (currentSettings.enforceScopeOnly) inScopeConnect else true
+
+        if (effectiveInScopeConnect && currentSettings.isInterceptEnabled && currentSettings.shouldInterceptMethod("CONNECT")) {
             val latch = java.util.concurrent.CountDownLatch(1)
             var actionResult: InterceptAction = InterceptAction.Forward("CONNECT", "https://$hostPort", mapOf("Host" to hostPort), "")
 

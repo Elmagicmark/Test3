@@ -9,6 +9,7 @@ data class ProxySettings(
     val upstreamProxyHost: String = "",
     val upstreamProxyPort: Int = 8080,
     val sslBypassEnabled: Boolean = true,
+    val http2Enabled: Boolean = true,
     val interceptMethods: Set<String> = setOf("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"),
     val interceptRequests: Boolean = true,
     val interceptResponses: Boolean = true,

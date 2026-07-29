@@ -182,6 +182,12 @@ class ProxyEngine {
             .followRedirects(false)
             .followSslRedirects(false)
 
+        if (settings.http2Enabled) {
+            builder.protocols(listOf(Protocol.HTTP_2, Protocol.HTTP_1_1))
+        } else {
+            builder.protocols(listOf(Protocol.HTTP_1_1))
+        }
+
         // Configure Upstream External Proxy if enabled
         if (settings.upstreamProxyEnabled && settings.upstreamProxyHost.isNotBlank()) {
             val upstreamProxy = java.net.Proxy(
@@ -418,6 +424,7 @@ class ProxyEngine {
             responseBodyString = okResponse.body?.string() ?: ""
 
             val respHeaderMap = mutableMapOf<String, String>()
+            respHeaderMap["X-Protocol"] = okResponse.protocol.toString()
             okResponse.headers.forEach { pair ->
                 respHeaderMap[pair.first] = pair.second
             }

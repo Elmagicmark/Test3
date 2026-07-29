@@ -37,6 +37,7 @@ fun SettingsScreen(
     var upstreamHost by remember(proxySettings) { mutableStateOf(proxySettings.upstreamProxyHost) }
     var upstreamPortText by remember(proxySettings) { mutableStateOf(proxySettings.upstreamProxyPort.toString()) }
     var sslBypassEnabled by remember(proxySettings) { mutableStateOf(proxySettings.sslBypassEnabled) }
+    var http2Enabled by remember(proxySettings) { mutableStateOf(proxySettings.http2Enabled) }
     val context = LocalContext.current
 
     Column(
@@ -126,6 +127,39 @@ fun SettingsScreen(
             }
         }
 
+        CyberCard(borderColor = CyberCyan) {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "HTTP/2 PROTOCOL SUPPORT (دعم HTTP/2)",
+                            color = CyberCyan,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace
+                        )
+                        Text(
+                            text = if (http2Enabled) "Enabled: ALPN multiplexing HTTP/2 with HTTP/1.1 fallback" else "Disabled: Force HTTP/1.1 legacy transport",
+                            color = OnCyberSurfaceMuted,
+                            fontSize = 11.sp,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
+
+                    Switch(
+                        checked = http2Enabled,
+                        onCheckedChange = { http2Enabled = it },
+                        colors = SwitchDefaults.colors(checkedThumbColor = CyberCyan),
+                        modifier = Modifier.testTag("http2_enabled_switch")
+                    )
+                }
+            }
+        }
+
         CyberCard(borderColor = WarningCrimson) {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Row(
@@ -206,7 +240,8 @@ fun SettingsScreen(
                     upstreamProxyEnabled = upstreamEnabled,
                     upstreamProxyHost = upstreamHost,
                     upstreamProxyPort = upP,
-                    sslBypassEnabled = sslBypassEnabled
+                    sslBypassEnabled = sslBypassEnabled,
+                    http2Enabled = http2Enabled
                 )
                 onSaveSettings(updated)
                 Toast.makeText(context, "Proxy Settings Applied Successfully", Toast.LENGTH_SHORT).show()

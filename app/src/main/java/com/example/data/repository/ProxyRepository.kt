@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
+import okhttp3.Protocol
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.net.InetSocketAddress
@@ -275,6 +276,11 @@ class ProxyRepository(
         updateProxySettings(newSettings)
     }
 
+    fun toggleHttp2(enabled: Boolean) {
+        val newSettings = _proxySettings.value.copy(http2Enabled = enabled)
+        updateProxySettings(newSettings)
+    }
+
     fun simulateTestInterceptRequest(
         method: String = "POST",
         url: String = "https://api.target-app.internal/v1/auth/login",
@@ -345,6 +351,12 @@ class ProxyRepository(
             val clientBuilder = OkHttpClient.Builder()
                 .connectTimeout(15, TimeUnit.SECONDS)
                 .readTimeout(15, TimeUnit.SECONDS)
+
+            if (settings.http2Enabled) {
+                clientBuilder.protocols(listOf(Protocol.HTTP_2, Protocol.HTTP_1_1))
+            } else {
+                clientBuilder.protocols(listOf(Protocol.HTTP_1_1))
+            }
 
             if (settings.upstreamProxyEnabled && settings.upstreamProxyHost.isNotBlank()) {
                 val upstreamProxy = Proxy(

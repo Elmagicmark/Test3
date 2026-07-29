@@ -189,6 +189,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         repository.toggleIncludeSubdomains(include)
     }
 
+    fun toggleHttp2(enabled: Boolean) {
+        repository.toggleHttp2(enabled)
+    }
+
     fun simulateTestInterceptRequest() {
         repository.simulateTestInterceptRequest()
     }

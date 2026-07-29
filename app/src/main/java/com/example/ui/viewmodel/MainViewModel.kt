@@ -130,9 +130,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                 val scopes = db.targetScopeDao().getAllScopes().first()
                 if (scopes.isEmpty()) {
-                    repository.addTargetScope(".*\\.target-app\\.internal/.*", true)
-                    repository.addTargetScope(".*\\.shop\\.internal/.*", true)
-                    repository.addTargetScope(".*\\.analytics-tracker\\.net/.*", false)
+                    repository.addTargetScope("target-app.internal", true)
+                    repository.addTargetScope("shop.internal", true)
+                    repository.addTargetScope("analytics-tracker.net", false)
                 }
 
                 val projects = db.securityProjectDao().getAllProjects().first()

@@ -16,6 +16,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -46,7 +47,8 @@ fun InterceptScreen(
     var selectedItem by remember { mutableStateOf<InterceptedRequestEntity?>(null) }
     var isFetchingResponse by remember { mutableStateOf(false) }
 
-    val allMethods = listOf("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "CONNECT")
+    // Pure HTTP Data Methods (CONNECT is handled automatically by SSL tunnel layer)
+    val allMethods = listOf("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS")
 
     // Sync selected item
     LaunchedEffect(interceptedList) {
@@ -60,14 +62,14 @@ fun InterceptScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(10.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+            .padding(6.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        // Intercept Control Header
+        // Intercept Control Header Card (Compact View)
         CyberCard(
             borderColor = if (isInterceptEnabled) WarningCrimson else CyberBorder
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -81,20 +83,20 @@ fun InterceptScreen(
                             imageVector = if (isInterceptEnabled) Icons.Default.PauseCircle else Icons.Default.PlayCircle,
                             contentDescription = "Intercept Status",
                             tint = if (isInterceptEnabled) WarningCrimson else NeonGreen,
-                            modifier = Modifier.size(20.dp)
+                            modifier = Modifier.size(18.dp)
                         )
                         Column {
                             Text(
                                 text = "INTERCEPT CONTROL",
                                 color = OnCyberDark,
-                                fontSize = 12.sp,
+                                fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
                                 fontFamily = FontFamily.Monospace
                             )
                             Text(
-                                text = if (isInterceptEnabled) "INTERCEPT IS ON - Holding Request" else "INTERCEPT IS OFF - Traffic Passthrough",
+                                text = if (isInterceptEnabled) "INTERCEPT ON - Capturing GET, POST, PUT..." else "INTERCEPT OFF - Passthrough Mode",
                                 color = if (isInterceptEnabled) WarningCrimson else OnCyberSurfaceMuted,
-                                fontSize = 10.sp,
+                                fontSize = 9.sp,
                                 fontFamily = FontFamily.Monospace
                             )
                         }
@@ -109,24 +111,31 @@ fun InterceptScreen(
                             uncheckedThumbColor = OnCyberSurfaceMuted,
                             uncheckedTrackColor = CyberSurfaceVariant
                         ),
-                        modifier = Modifier.testTag("intercept_switch")
+                        modifier = Modifier
+                            .graphicsLayer(scaleX = 0.85f, scaleY = 0.85f)
+                            .testTag("intercept_switch")
                     )
                 }
 
                 Divider(color = CyberBorder, thickness = 0.5.dp)
 
                 // Method Filters Selector (تصفية الميثود)
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
                     Text(
-                        text = "CAPTURE METHOD FILTERS:",
+                        text = "METHODS:",
                         fontSize = 9.sp,
                         color = OnCyberSurfaceMuted,
                         fontFamily = FontFamily.Monospace,
                         fontWeight = FontWeight.Bold
                     )
                     LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
                     ) {
                         items(allMethods) { method ->
                             val isSelected = interceptMethods.contains(method)
@@ -140,21 +149,21 @@ fun InterceptScreen(
                                         shape = RoundedCornerShape(4.dp)
                                     )
                                     .clickable { onToggleInterceptMethod(method) }
-                                    .padding(horizontal = 8.dp, vertical = 3.dp)
+                                    .padding(horizontal = 6.dp, vertical = 2.dp)
                             ) {
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    horizontalArrangement = Arrangement.spacedBy(3.dp)
                                 ) {
                                     Text(
                                         text = method,
-                                        fontSize = 10.sp,
+                                        fontSize = 9.sp,
                                         fontWeight = FontWeight.Bold,
                                         fontFamily = FontFamily.Monospace,
                                         color = if (isSelected) CyberCyan else OnCyberSurfaceMuted
                                     )
                                     if (isSelected) {
-                                        Text("✓", fontSize = 9.sp, color = NeonGreen, fontWeight = FontWeight.Bold)
+                                        Text("✓", fontSize = 8.sp, color = NeonGreen, fontWeight = FontWeight.Bold)
                                     }
                                 }
                             }
@@ -164,7 +173,252 @@ fun InterceptScreen(
             }
         }
 
-        if (interceptedList.isEmpty()) {
+        // Action Toolbar & Queued Requests Header (جميع الأدوات بجانب FORWARD ALL)
+        selectedItem?.let { req ->
+            var editableMethod by remember(req.id, req.method) { mutableStateOf(req.method) }
+            var editableUrl by remember(req.id, req.url) { mutableStateOf(req.url) }
+            var editableHeaders by remember(req.id, req.headersJson) { mutableStateOf(req.headersJson) }
+            var editableBody by remember(req.id, req.body) { mutableStateOf(req.body) }
+
+            // TOP INTEGRATED ACTION TOOLBAR (جميع أزرار التحكم في مكان موحد أعلى المحرر)
+            CyberCard(borderColor = CyberCyan) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "QUEUED (${interceptedList.size})",
+                            color = CyberCyan,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace
+                        )
+
+                        // Scrollable Toolbar containing FORWARD, FORWARD ALL, VIEW RESP, DROP, REPEATER
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            item {
+                                // FORWARD BUTTON
+                                Button(
+                                    onClick = {
+                                        if (req.isResponse) {
+                                            val code = editableMethod.toIntOrNull() ?: req.statusCode ?: 200
+                                            onForwardResponse(req.id, code, editableHeaders, editableBody)
+                                        } else {
+                                            onForward(req.id, editableMethod, editableUrl, editableHeaders, editableBody)
+                                        }
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = NeonGreen, contentColor = Color.Black),
+                                    shape = RoundedCornerShape(4.dp),
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                                    modifier = Modifier.height(28.dp)
+                                ) {
+                                    Icon(Icons.Default.Send, contentDescription = null, modifier = Modifier.size(11.dp))
+                                    Spacer(modifier = Modifier.width(3.dp))
+                                    Text(if (req.isResponse) "FORWARD RESP" else "FORWARD", fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, fontSize = 9.sp)
+                                }
+                            }
+
+                            item {
+                                // FORWARD ALL BUTTON
+                                OutlinedButton(
+                                    onClick = { onForwardAll() },
+                                    shape = RoundedCornerShape(4.dp),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, NeonGreen),
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                                    modifier = Modifier.height(28.dp)
+                                ) {
+                                    Icon(Icons.Default.FastForward, contentDescription = null, modifier = Modifier.size(11.dp), tint = NeonGreen)
+                                    Spacer(modifier = Modifier.width(3.dp))
+                                    Text("FORWARD ALL", color = NeonGreen, fontSize = 9.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                                }
+                            }
+
+                            if (!req.isResponse) {
+                                item {
+                                    // VIEW RESP BUTTON
+                                    Button(
+                                        onClick = {
+                                            isFetchingResponse = true
+                                            onFetchResponse(req.id, editableMethod, editableUrl, editableHeaders, editableBody) {
+                                                isFetchingResponse = false
+                                            }
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = CyberCyan, contentColor = Color.Black),
+                                        shape = RoundedCornerShape(4.dp),
+                                        enabled = !isFetchingResponse,
+                                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                                        modifier = Modifier.height(28.dp)
+                                    ) {
+                                        if (isFetchingResponse) {
+                                            CircularProgressIndicator(modifier = Modifier.size(10.dp), color = Color.Black, strokeWidth = 1.5.dp)
+                                            Spacer(modifier = Modifier.width(3.dp))
+                                            Text("FETCHING...", fontSize = 9.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                                        } else {
+                                            Icon(Icons.Default.Visibility, contentDescription = null, modifier = Modifier.size(11.dp))
+                                            Spacer(modifier = Modifier.width(3.dp))
+                                            Text("VIEW RESP", fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, fontSize = 9.sp)
+                                        }
+                                    }
+                                }
+                            }
+
+                            item {
+                                // DROP BUTTON
+                                Button(
+                                    onClick = { onDrop(req.id) },
+                                    colors = ButtonDefaults.buttonColors(containerColor = WarningCrimson, contentColor = Color.White),
+                                    shape = RoundedCornerShape(4.dp),
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                                    modifier = Modifier.height(28.dp)
+                                ) {
+                                    Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(11.dp))
+                                    Spacer(modifier = Modifier.width(3.dp))
+                                    Text("DROP", fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, fontSize = 9.sp)
+                                }
+                            }
+
+                            item {
+                                // TO REPEATER BUTTON
+                                OutlinedButton(
+                                    onClick = {
+                                        onSendToRepeater(editableMethod, editableUrl, editableHeaders, editableBody)
+                                    },
+                                    shape = RoundedCornerShape(4.dp),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, CyberCyan),
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                                    modifier = Modifier.height(28.dp)
+                                ) {
+                                    Icon(Icons.Default.Repeat, contentDescription = null, modifier = Modifier.size(11.dp), tint = CyberCyan)
+                                    Spacer(modifier = Modifier.width(3.dp))
+                                    Text("REPEATER", color = CyberCyan, fontFamily = FontFamily.Monospace, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
+
+                    // Compact Horizontal Queue Strip
+                    if (interceptedList.size > 1) {
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            items(interceptedList) { item ->
+                                val isSelected = item.id == req.id
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(4.dp))
+                                        .background(if (isSelected) CyberSurfaceVariant else CyberDarkBg)
+                                        .border(1.dp, if (isSelected) CyberCyan else CyberBorder, RoundedCornerShape(4.dp))
+                                        .clickable { selectedItem = item }
+                                        .padding(horizontal = 6.dp, vertical = 3.dp)
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        MethodBadge(method = item.method)
+                                        Text(
+                                            text = item.url.takeLast(25),
+                                            color = if (isSelected) CyberCyan else OnCyberDark,
+                                            fontSize = 9.sp,
+                                            fontFamily = FontFamily.Monospace
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Compact Request / Response Interactive Editor View
+            CyberCard(
+                modifier = Modifier.weight(1f),
+                borderColor = if (req.isResponse) WarningCrimson else CyberCyan
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        text = if (req.isResponse) "SPOOF RESPONSE BEFORE CLIENT RECEIVES" else "EDIT REQUEST PAYLOAD BEFORE SERVER RECEIVES",
+                        color = if (req.isResponse) WarningCrimson else CyberCyan,
+                        fontSize = 9.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace
+                    )
+
+                    // Method & Target URL Row
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedTextField(
+                            value = editableMethod,
+                            onValueChange = { editableMethod = it },
+                            modifier = Modifier.width(80.dp),
+                            singleLine = true,
+                            textStyle = LocalTextStyle.current.copy(
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 9.5.sp,
+                                color = if (req.isResponse) WarningCrimson else CyberCyan,
+                                fontWeight = FontWeight.Bold
+                            ),
+                            label = { Text(if (req.isResponse) "Status" else "Method", fontSize = 8.sp) }
+                        )
+
+                        OutlinedTextField(
+                            value = editableUrl,
+                            onValueChange = { editableUrl = it },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                            textStyle = LocalTextStyle.current.copy(
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 9.5.sp,
+                                color = OnCyberDark
+                            ),
+                            label = { Text("Target URL", fontSize = 8.sp) }
+                        )
+                    }
+
+                    // Request / Response Headers JSON Field
+                    OutlinedTextField(
+                        value = editableHeaders,
+                        onValueChange = { editableHeaders = it },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(55.dp),
+                        textStyle = LocalTextStyle.current.copy(
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 9.sp,
+                            color = OnCyberDark
+                        ),
+                        label = { Text("Headers (JSON)", fontSize = 8.sp) }
+                    )
+
+                    // Request / Response Body Text Field
+                    OutlinedTextField(
+                        value = editableBody,
+                        onValueChange = { editableBody = it },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
+                        textStyle = LocalTextStyle.current.copy(
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 9.sp,
+                            color = OnCyberDark
+                        ),
+                        label = { Text(if (req.isResponse) "Response Body (Payload)" else "Request Body (GET/POST/PUT)", fontSize = 8.sp) }
+                    )
+                }
+            }
+        } ?: run {
+            // Empty State View when no request is queued
             CyberCard(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -177,332 +431,34 @@ fun InterceptScreen(
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Icon(
                             imageVector = Icons.Default.Shield,
-                            contentDescription = "Empty",
+                            contentDescription = "Empty Queue",
                             tint = OnCyberSurfaceMuted,
-                            modifier = Modifier.size(40.dp)
+                            modifier = Modifier.size(36.dp)
                         )
-                        Spacer(modifier = Modifier.height(8.dp))
+                        Spacer(modifier = Modifier.height(6.dp))
                         Text(
                             text = "NO INTERCEPTED REQUESTS QUEUED",
                             color = OnCyberSurfaceMuted,
-                            fontSize = 12.sp,
+                            fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
                             fontFamily = FontFamily.Monospace
                         )
                         Text(
-                            text = if (isInterceptEnabled) "Listening for methods: ${interceptMethods.joinToString(", ")}" else "Turn Intercept ON to pause live client HTTP/HTTPS requests",
+                            text = if (isInterceptEnabled) "Listening for methods: ${interceptMethods.joinToString(", ")}" else "Turn Intercept ON to capture live GET, POST, PUT, DELETE requests",
                             color = OnCyberSurfaceMuted.copy(alpha = 0.7f),
-                            fontSize = 10.sp,
+                            fontSize = 9.sp,
                             fontFamily = FontFamily.Monospace,
                             modifier = Modifier.padding(top = 2.dp)
                         )
-                        Spacer(modifier = Modifier.height(12.dp))
+                        Spacer(modifier = Modifier.height(10.dp))
                         Button(
                             onClick = { onSimulateTestIntercept?.invoke() },
                             colors = ButtonDefaults.buttonColors(containerColor = CyberCyan, contentColor = Color.Black),
                             shape = RoundedCornerShape(4.dp)
                         ) {
-                            Icon(Icons.Default.AddAlert, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Icon(Icons.Default.AddAlert, contentDescription = null, modifier = Modifier.size(13.dp))
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("GENERATE TEST INTERCEPT REQUEST", fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
-                        }
-                    }
-                }
-            }
-        } else {
-            // Queue & Action Bar
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "QUEUED REQUESTS (${interceptedList.size})",
-                    color = CyberCyan,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    fontFamily = FontFamily.Monospace
-                )
-
-                OutlinedButton(
-                    onClick = { onForwardAll() },
-                    shape = RoundedCornerShape(4.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, NeonGreen),
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
-                ) {
-                    Text(
-                        text = "FORWARD ALL",
-                        color = NeonGreen,
-                        fontSize = 10.sp,
-                        fontFamily = FontFamily.Monospace
-                    )
-                }
-            }
-
-            // List of Queued Items
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 130.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                items(interceptedList) { item ->
-                    val isSelected = item.id == selectedItem?.id
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(if (isSelected) CyberSurfaceVariant else CyberSurface)
-                            .border(
-                                1.dp,
-                                if (isSelected) CyberCyan else CyberBorder,
-                                RoundedCornerShape(4.dp)
-                            )
-                            .padding(horizontal = 6.dp, vertical = 4.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                if (item.isResponse) {
-                                    Surface(
-                                        color = WarningCrimson.copy(alpha = 0.2f),
-                                        shape = RoundedCornerShape(4.dp),
-                                        border = androidx.compose.foundation.BorderStroke(1.dp, WarningCrimson)
-                                    ) {
-                                        Text(
-                                            text = "RESP ${item.statusCode}",
-                                            color = WarningCrimson,
-                                            fontSize = 9.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            fontFamily = FontFamily.Monospace,
-                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                                        )
-                                    }
-                                } else {
-                                    MethodBadge(method = item.method)
-                                }
-                                Text(
-                                    text = item.url,
-                                    color = OnCyberDark,
-                                    fontSize = 10.sp,
-                                    maxLines = 1,
-                                    fontFamily = FontFamily.Monospace
-                                )
-                            }
-                            Button(
-                                onClick = { selectedItem = item },
-                                colors = ButtonDefaults.buttonColors(containerColor = CyberSurfaceVariant),
-                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
-                            ) {
-                                Text(
-                                    text = if (isSelected) "Editing" else "Edit",
-                                    fontSize = 9.sp,
-                                    color = if (isSelected) CyberCyan else OnCyberDark
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Request Interactive Editor View
-            selectedItem?.let { req ->
-                var editableMethod by remember(req.id, req.method) { mutableStateOf(req.method) }
-                var editableUrl by remember(req.id, req.url) { mutableStateOf(req.url) }
-                var editableHeaders by remember(req.id, req.headersJson) { mutableStateOf(req.headersJson) }
-                var editableBody by remember(req.id, req.body) { mutableStateOf(req.body) }
-
-                CyberCard(
-                    modifier = Modifier.weight(1f),
-                    borderColor = if (req.isResponse) WarningCrimson else CyberCyan
-                ) {
-                    Column(
-                        modifier = Modifier.fillMaxSize(),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Text(
-                            text = if (req.isResponse) "SERVER RESPONSE INTERCEPTED (INSPECT / SPOOF BEFORE CLIENT)" else "CLIENT REQUEST INTERCEPTED (MODIFIED BEFORE SERVER)",
-                            color = if (req.isResponse) WarningCrimson else CyberCyan,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = FontFamily.Monospace
-                        )
-
-                        // Method & URL row
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            OutlinedTextField(
-                                value = editableMethod,
-                                onValueChange = { editableMethod = it },
-                                modifier = Modifier.width(90.dp),
-                                textStyle = LocalTextStyle.current.copy(
-                                    fontFamily = FontFamily.Monospace,
-                                    fontSize = 10.sp,
-                                    color = if (req.isResponse) WarningCrimson else CyberCyan
-                                ),
-                                label = { Text(if (req.isResponse) "Status" else "Method", fontSize = 9.sp) }
-                            )
-
-                            OutlinedTextField(
-                                value = editableUrl,
-                                onValueChange = { editableUrl = it },
-                                modifier = Modifier.weight(1f),
-                                textStyle = LocalTextStyle.current.copy(
-                                    fontFamily = FontFamily.Monospace,
-                                    fontSize = 10.sp,
-                                    color = OnCyberDark
-                                ),
-                                label = { Text("Target URL", fontSize = 9.sp) }
-                            )
-                        }
-
-                        // Headers JSON Field
-                        OutlinedTextField(
-                            value = editableHeaders,
-                            onValueChange = { editableHeaders = it },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(60.dp),
-                            textStyle = LocalTextStyle.current.copy(
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 10.sp,
-                                color = OnCyberDark
-                            ),
-                            label = { Text(if (req.isResponse) "Response Headers (JSON)" else "Request Headers (JSON)", fontSize = 9.sp) }
-                        )
-
-                        // Body Text Field
-                        OutlinedTextField(
-                            value = editableBody,
-                            onValueChange = { editableBody = it },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .weight(1f),
-                            textStyle = LocalTextStyle.current.copy(
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 10.sp,
-                                color = OnCyberDark
-                            ),
-                            label = { Text(if (req.isResponse) "Response Body (Spoof Payload)" else "Request Body", fontSize = 9.sp) }
-                        )
-
-                        // Action Buttons
-                        if (req.isResponse) {
-                            // SERVER RESPONSE ACTION BUTTONS
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                Button(
-                                    onClick = {
-                                        val statusCodeInt = editableMethod.toIntOrNull() ?: req.statusCode ?: 200
-                                        onForwardResponse(req.id, statusCodeInt, editableHeaders, editableBody)
-                                    },
-                                    colors = ButtonDefaults.buttonColors(containerColor = NeonGreen, contentColor = Color.Black),
-                                    modifier = Modifier.weight(1.3f),
-                                    shape = RoundedCornerShape(4.dp),
-                                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
-                                ) {
-                                    Icon(Icons.Default.Send, contentDescription = null, modifier = Modifier.size(12.dp))
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text("FORWARD RESP", fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, fontSize = 10.sp)
-                                }
-
-                                Button(
-                                    onClick = { onDrop(req.id) },
-                                    colors = ButtonDefaults.buttonColors(containerColor = WarningCrimson, contentColor = Color.White),
-                                    modifier = Modifier.weight(0.9f),
-                                    shape = RoundedCornerShape(4.dp),
-                                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
-                                ) {
-                                    Text("DROP", fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, fontSize = 10.sp)
-                                }
-
-                                OutlinedButton(
-                                    onClick = {
-                                        onSendToRepeater(editableMethod, editableUrl, editableHeaders, editableBody)
-                                    },
-                                    modifier = Modifier.weight(1f),
-                                    shape = RoundedCornerShape(4.dp),
-                                    border = androidx.compose.foundation.BorderStroke(1.dp, CyberCyan),
-                                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
-                                ) {
-                                    Text("TO REPEATER", color = CyberCyan, fontFamily = FontFamily.Monospace, fontSize = 9.5.sp)
-                                }
-                            }
-                        } else {
-                            // CLIENT REQUEST ACTION BUTTONS
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                Button(
-                                    onClick = {
-                                        onForward(req.id, editableMethod, editableUrl, editableHeaders, editableBody)
-                                    },
-                                    colors = ButtonDefaults.buttonColors(containerColor = NeonGreen, contentColor = Color.Black),
-                                    modifier = Modifier.weight(1.1f),
-                                    shape = RoundedCornerShape(4.dp),
-                                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
-                                ) {
-                                    Text("FORWARD REQ", fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, fontSize = 9.5.sp)
-                                }
-
-                                // FETCH RESPONSE BUTTON (زرار معاينة الريسبونس قبل ما يبعته)
-                                Button(
-                                    onClick = {
-                                        isFetchingResponse = true
-                                        onFetchResponse(req.id, editableMethod, editableUrl, editableHeaders, editableBody) {
-                                            isFetchingResponse = false
-                                        }
-                                    },
-                                    colors = ButtonDefaults.buttonColors(containerColor = CyberCyan, contentColor = Color.Black),
-                                    modifier = Modifier.weight(1.3f),
-                                    shape = RoundedCornerShape(4.dp),
-                                    enabled = !isFetchingResponse,
-                                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
-                                ) {
-                                    if (isFetchingResponse) {
-                                        CircularProgressIndicator(modifier = Modifier.size(12.dp), color = Color.Black, strokeWidth = 2.dp)
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text("FETCHING...", fontSize = 9.5.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
-                                    } else {
-                                        Icon(Icons.Default.Visibility, contentDescription = "Inspect Response", modifier = Modifier.size(12.dp))
-                                        Spacer(modifier = Modifier.width(3.dp))
-                                        Text("VIEW RESP", fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, fontSize = 9.5.sp)
-                                    }
-                                }
-
-                                Button(
-                                    onClick = { onDrop(req.id) },
-                                    colors = ButtonDefaults.buttonColors(containerColor = WarningCrimson, contentColor = Color.White),
-                                    modifier = Modifier.weight(0.8f),
-                                    shape = RoundedCornerShape(4.dp),
-                                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
-                                ) {
-                                    Text("DROP", fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, fontSize = 9.5.sp)
-                                }
-
-                                OutlinedButton(
-                                    onClick = {
-                                        onSendToRepeater(editableMethod, editableUrl, editableHeaders, editableBody)
-                                    },
-                                    modifier = Modifier.weight(0.9f),
-                                    shape = RoundedCornerShape(4.dp),
-                                    border = androidx.compose.foundation.BorderStroke(1.dp, CyberCyan),
-                                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
-                                ) {
-                                    Text("REPEATER", color = CyberCyan, fontFamily = FontFamily.Monospace, fontSize = 9.sp)
-                                }
-                            }
+                            Text("GENERATE TEST INTERCEPT REQUEST", fontSize = 9.5.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
                         }
                     }
                 }

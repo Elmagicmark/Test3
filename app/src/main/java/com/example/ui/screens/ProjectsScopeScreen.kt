@@ -124,10 +124,16 @@ fun ProjectsScopeScreen(
         CyberCard(borderColor = CyberCyan) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    text = "TARGET SCOPE PATTERN RULES",
+                    text = "TARGET DOMAIN SCOPE RULES (بدون Regex)",
                     color = CyberCyan,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace
+                )
+                Text(
+                    text = "ضع اسم الدومين فقط (مثل: example.com) وسيقوم ملتقط الترافك بتصفية هذا الدومين وكل النطاقات الفرعية تلقائياً ويمرر أي شىء آخر.",
+                    color = OnCyberSurfaceMuted,
+                    fontSize = 10.sp,
                     fontFamily = FontFamily.Monospace
                 )
 
@@ -138,17 +144,22 @@ fun ProjectsScopeScreen(
                     OutlinedTextField(
                         value = newScopePattern,
                         onValueChange = { newScopePattern = it },
-                        placeholder = { Text("Regex/URL e.g. .*\\.example\\.com/.*", fontSize = 11.sp, color = OnCyberSurfaceMuted) },
+                        placeholder = { Text("Domain e.g. example.com or target.com", fontSize = 11.sp, color = OnCyberSurfaceMuted) },
                         modifier = Modifier.weight(1f).testTag("scope_pattern_input"),
                         textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = OnCyberDark)
                     )
 
                     Button(
                         onClick = {
-                            if (newScopePattern.isNotBlank()) {
-                                onAddScope(newScopePattern, newScopeIsInScope)
+                            val clean = newScopePattern.trim().lowercase()
+                                .removePrefix("http://").removePrefix("https://")
+                                .removePrefix("*.").removePrefix(".")
+                                .replace(".*", "").replace("\\.", ".")
+                                .substringBefore("/").substringBefore(":")
+                            if (clean.isNotBlank()) {
+                                onAddScope(clean, newScopeIsInScope)
                                 newScopePattern = ""
-                                Toast.makeText(context, "Target Scope Rule Added", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "Scope Added: $clean", Toast.LENGTH_SHORT).show()
                             }
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = CyberCyan, contentColor = Color.Black),

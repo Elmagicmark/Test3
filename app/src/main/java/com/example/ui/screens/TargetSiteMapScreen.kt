@@ -98,7 +98,14 @@ fun TargetSiteMapScreen(
                 val path = if (uri.path.isNullOrEmpty()) "/" else uri.path
 
                 val isInScope = targetScopes.isEmpty() || targetScopes.any { scope ->
-                    if (scope.isInScope) tx.url.contains(scope.pattern.replace(".*", "")) else false
+                    if (scope.isInScope) {
+                        val cleanPattern = scope.pattern.trim().lowercase()
+                            .removePrefix("http://").removePrefix("https://")
+                            .removePrefix("*.").removePrefix(".")
+                            .replace(".*", "").replace("\\.", ".")
+                            .substringBefore("/").substringBefore(":")
+                        tx.url.lowercase().contains(cleanPattern)
+                    } else false
                 }
 
                 val existing = map.getOrPut(host) { HostSiteMap(host, isInScope, mutableListOf()) }

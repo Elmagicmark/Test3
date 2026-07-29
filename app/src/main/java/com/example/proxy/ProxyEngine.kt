@@ -53,52 +53,67 @@ class ProxyEngine {
     }
 
     fun isUrlInScope(url: String, settings: ProxySettings, scopes: List<com.example.data.local.TargetScopeEntity>): Boolean {
-        if (!settings.enforceScopeOnly) return true
-
         val enabledScopes = scopes.filter { it.isEnabled }
         if (enabledScopes.isEmpty()) return true
 
-        val host = try {
-            val uri = java.net.URI(url)
-            uri.host ?: url.removePrefix("http://").removePrefix("https://").substringBefore("/").substringBefore(":")
-        } catch (_: Exception) {
-            url.removePrefix("http://").removePrefix("https://").substringBefore("/").substringBefore(":")
-        }
-
-        if (host.isBlank()) return true
-
+        // 1. Check if explicitly excluded
         val isExcluded = enabledScopes.any { scope ->
-            !scope.isInScope && matchesDomainPattern(host, scope.pattern, settings.includeSubdomains)
+            !scope.isInScope && matchesDomainPattern(url, scope.pattern, settings.includeSubdomains)
         }
         if (isExcluded) return false
 
+        // 2. Check if matches any in-scope rule
         val inScopeRules = enabledScopes.filter { it.isInScope }
         if (inScopeRules.isEmpty()) return true
 
         return inScopeRules.any { scope ->
-            matchesDomainPattern(host, scope.pattern, settings.includeSubdomains)
+            matchesDomainPattern(url, scope.pattern, settings.includeSubdomains)
         }
     }
 
-    private fun matchesDomainPattern(host: String, pattern: String, includeSubdomains: Boolean): Boolean {
-        var cleanPattern = pattern.trim().lowercase()
-        cleanPattern = cleanPattern.removePrefix("http://").removePrefix("https://").removePrefix("*.")
-        val slashIdx = cleanPattern.indexOf('/')
-        if (slashIdx != -1) cleanPattern = cleanPattern.substring(0, slashIdx)
-        val portIdx = cleanPattern.indexOf(':')
-        if (portIdx != -1) cleanPattern = cleanPattern.substring(0, portIdx)
+    private fun cleanDomainPattern(pattern: String): String {
+        var s = pattern.trim().lowercase()
+        s = s.removePrefix("http://").removePrefix("https://")
+        s = s.removePrefix("*.").removePrefix(".")
+        s = s.replace(".*", "").replace("\\.", ".")
+        val slashIdx = s.indexOf('/')
+        if (slashIdx != -1) s = s.substring(0, slashIdx)
+        val portIdx = s.indexOf(':')
+        if (portIdx != -1) s = s.substring(0, portIdx)
+        return s.trim()
+    }
 
-        val cleanHost = host.trim().lowercase()
+    private fun extractHost(url: String): String {
+        if (url.isBlank()) return ""
+        var clean = url.trim().lowercase()
+        clean = clean.removePrefix("http://").removePrefix("https://")
+        val slashIdx = clean.indexOf('/')
+        if (slashIdx != -1) clean = clean.substring(0, slashIdx)
+        val portIdx = clean.indexOf(':')
+        if (portIdx != -1) clean = clean.substring(0, portIdx)
+        return clean.trim()
+    }
 
-        if (cleanHost == cleanPattern) return true
+    fun matchesDomainPattern(urlOrHost: String, pattern: String, includeSubdomains: Boolean = true): Boolean {
+        val cleanPattern = cleanDomainPattern(pattern)
+        if (cleanPattern.isEmpty()) return false
 
-        if (includeSubdomains && cleanHost.endsWith(".$cleanPattern")) return true
+        val host = extractHost(urlOrHost)
+        val urlLower = urlOrHost.trim().lowercase()
 
-        return try {
-            Regex(pattern, RegexOption.IGNORE_CASE).containsMatchIn(host)
-        } catch (_: Exception) {
-            false
-        }
+        // 1. Exact host match
+        if (host == cleanPattern) return true
+
+        // 2. Subdomain match (e.g. api.example.com matches example.com)
+        if (includeSubdomains && host.endsWith(".$cleanPattern")) return true
+
+        // 3. Host contains domain substring
+        if (host.contains(cleanPattern)) return true
+
+        // 4. Raw URL contains domain substring
+        if (urlLower.contains(cleanPattern)) return true
+
+        return false
     }
 
     fun startProxy(

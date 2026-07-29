@@ -54,6 +54,9 @@ class ProxyRepository(
                 proxyEngine.updateActiveScopes(scopes)
             }
         }
+        if (_proxySettings.value.isProxyRunning) {
+            startProxyEngine(_proxySettings.value)
+        }
     }
 
     private suspend fun seedInitialDataIfEmpty() {
@@ -78,7 +81,10 @@ class ProxyRepository(
     }
 
     fun toggleIntercept(intercept: Boolean) {
-        val newSettings = _proxySettings.value.copy(isInterceptEnabled = intercept)
+        val newSettings = _proxySettings.value.copy(
+            isInterceptEnabled = intercept,
+            isProxyRunning = if (intercept) true else _proxySettings.value.isProxyRunning
+        )
         _proxySettings.value = newSettings
         if (!intercept) {
             releaseAllPendingIntercepts()
@@ -287,6 +293,9 @@ class ProxyRepository(
         headersJson: String = "{\"Host\":\"api.target-app.internal\",\"User-Agent\":\"InterceptX-Test/1.0\",\"Content-Type\":\"application/json\"}",
         body: String = "{\"username\":\"admin_sec\",\"auth_token\":\"dG9rZW5fYmFzZTY0\"}"
     ) {
+        if (!_proxySettings.value.isInterceptEnabled) {
+            toggleIntercept(true)
+        }
         scope.launch(Dispatchers.IO) {
             val entity = InterceptedRequestEntity(
                 method = method,

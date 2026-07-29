@@ -4,7 +4,7 @@ data class ProxySettings(
     val host: String = "127.0.0.1",
     val port: Int = 8080,
     val isInterceptEnabled: Boolean = false,
-    val isProxyRunning: Boolean = false,
+    val isProxyRunning: Boolean = true,
     val upstreamProxyEnabled: Boolean = false,
     val upstreamProxyHost: String = "",
     val upstreamProxyPort: Int = 8080,
@@ -17,7 +17,6 @@ data class ProxySettings(
     val includeSubdomains: Boolean = true
 ) {
     fun shouldInterceptMethod(method: String): Boolean {
-        if (method.equals("CONNECT", ignoreCase = true)) return false
         if (interceptMethods.isEmpty()) return true
         return interceptMethods.any { it.equals(method, ignoreCase = true) }
     }

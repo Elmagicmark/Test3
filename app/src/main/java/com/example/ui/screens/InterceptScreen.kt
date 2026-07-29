@@ -46,7 +46,7 @@ fun InterceptScreen(
     var selectedItem by remember { mutableStateOf<InterceptedRequestEntity?>(null) }
     var isFetchingResponse by remember { mutableStateOf(false) }
 
-    val allMethods = listOf("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS")
+    val allMethods = listOf("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "CONNECT")
 
     // Sync selected item
     LaunchedEffect(interceptedList) {

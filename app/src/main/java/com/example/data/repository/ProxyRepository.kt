@@ -393,7 +393,18 @@ class ProxyRepository(
 
             client.newCall(request).execute().use { response ->
                 val code = response.code
-                val respBody = response.body?.string() ?: ""
+                var rawBytes = response.body?.bytes() ?: byteArrayOf()
+                val encoding = response.header("Content-Encoding")
+                if (encoding?.contains("gzip", ignoreCase = true) == true && rawBytes.isNotEmpty()) {
+                    try {
+                        rawBytes = java.util.zip.GZIPInputStream(java.io.ByteArrayInputStream(rawBytes)).readBytes()
+                    } catch (_: Exception) {}
+                } else if (encoding?.contains("deflate", ignoreCase = true) == true && rawBytes.isNotEmpty()) {
+                    try {
+                        rawBytes = java.util.zip.InflaterInputStream(java.io.ByteArrayInputStream(rawBytes)).readBytes()
+                    } catch (_: Exception) {}
+                }
+                val respBody = String(rawBytes, Charsets.UTF_8)
                 Pair(code, respBody)
             }
         } catch (e: Exception) {

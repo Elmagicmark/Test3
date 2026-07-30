@@ -23,8 +23,8 @@ import javax.net.ssl.*
 
 object CertificateManager {
 
-    private const val CA_FILENAME_PEM = "InterceptX_Root_CA.pem"
-    private const val CA_FILENAME_CRT = "InterceptX_Root_CA.crt"
+    private const val CA_FILENAME_PEM = "Reqable_Root_CA.pem"
+    private const val CA_FILENAME_CRT = "Reqable_Root_CA.crt"
 
     private var cachedKeyPair: KeyPair? = null
     private var cachedPemString: String? = null
@@ -141,8 +141,8 @@ object CertificateManager {
             derNull()
         )
 
-        // 4. Issuer Name (CN=InterceptX Security Root CA, O=InterceptX Cyber Labs Inc, C=US)
-        val issuerName = derName("InterceptX Security Root CA", "InterceptX Cyber Labs Inc", "US")
+        // 4. Issuer Name (CN=Reqable Root CA (InterceptX), O=Reqable, C=US)
+        val issuerName = derName("Reqable Root CA (InterceptX)", "Reqable Security Proxy", "US")
 
         // 5. Validity (2025-01-01 to 2035-12-31)
         val validity = derSequence(
@@ -164,11 +164,11 @@ object CertificateManager {
             derOctetString(derSequence(derBoolean(true)))
         )
 
-        // Extension 2: KeyUsage (2.5.29.15) - Critical, keyCertSign (5), cRLSign (6), digitalSignature (0) -> 0x86
+        // Extension 2: KeyUsage (2.5.29.15) - Critical, keyCertSign, cRLSign, digitalSignature
         val extKeyUsage = derSequence(
             derOid("2.5.29.15"),
             derBoolean(true),
-            derOctetString(derBitString(byteArrayOf(0x86.toByte())))
+            derOctetString(byteArrayOf(0x03, 0x02, 0x01, 0x86.toByte()))
         )
 
         // Extension 3: SubjectKeyIdentifier (2.5.29.14)
@@ -182,7 +182,13 @@ object CertificateManager {
             derOctetString(derOctetString(sha1))
         )
 
-        val extensionsSeq = derSequence(extBasicConstraints, extKeyUsage, extSubjectKeyId)
+        // Extension 4: AuthorityKeyIdentifier (2.5.29.35)
+        val extAuthKeyId = derSequence(
+            derOid("2.5.29.35"),
+            derOctetString(derSequence(derTagAndLength(0x80, sha1.size) + sha1))
+        )
+
+        val extensionsSeq = derSequence(extBasicConstraints, extKeyUsage, extSubjectKeyId, extAuthKeyId)
         val extensions = derExplicitContext(3, extensionsSeq)
 
         // Assemble TBSCertificate
@@ -317,11 +323,18 @@ object CertificateManager {
         return bos.toByteArray()
     }
 
+    private fun derPrintableString(str: String): ByteArray {
+        val bytes = str.toByteArray(Charsets.US_ASCII)
+        val header = derTagAndLength(0x13, bytes.size)
+        return header + bytes
+    }
+
     private fun derName(cn: String, org: String, c: String): ByteArray {
         val cnSet = derSet(derSequence(derOid("2.5.4.3"), derUtf8String(cn)))
         val orgSet = derSet(derSequence(derOid("2.5.4.10"), derUtf8String(org)))
-        val cSet = derSet(derSequence(derOid("2.5.4.6"), derUtf8String(c)))
-        return derSequence(cnSet, orgSet, cSet)
+        val ouSet = derSet(derSequence(derOid("2.5.4.11"), derUtf8String("Reqable Security Proxy")))
+        val cSet = derSet(derSequence(derOid("2.5.4.6"), derPrintableString(c)))
+        return derSequence(cnSet, orgSet, ouSet, cSet)
     }
 
     fun installCertificateInSystem(context: Context): Pair<Boolean, String> {

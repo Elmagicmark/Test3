@@ -440,7 +440,9 @@ class ProxyEngine {
         try {
             val reqBuilder = Request.Builder().url(execUrl)
             execHeadersMap.forEach { (k, v) ->
-                if (!k.equals("Host", ignoreCase = true) && !k.equals("Proxy-Connection", ignoreCase = true)) {
+                if (!k.equals("Host", ignoreCase = true) && 
+                    !k.equals("Proxy-Connection", ignoreCase = true) &&
+                    !k.equals("Accept-Encoding", ignoreCase = true)) {
                     reqBuilder.addHeader(k, v)
                 }
             }
@@ -461,12 +463,31 @@ class ProxyEngine {
 
             val okResponse = httpClient.newCall(reqBuilder.build()).execute()
             statusCode = okResponse.code
-            responseBodyString = okResponse.body?.string() ?: ""
+
+            var rawRespBytes = okResponse.body?.bytes() ?: byteArrayOf()
+            val contentEncoding = okResponse.header("Content-Encoding")
+            if (contentEncoding?.contains("gzip", ignoreCase = true) == true && rawRespBytes.isNotEmpty()) {
+                try {
+                    rawRespBytes = java.util.zip.GZIPInputStream(java.io.ByteArrayInputStream(rawRespBytes)).readBytes()
+                } catch (e: Exception) {
+                    Log.w("ProxyEngine", "Failed GZIP decompress: ${e.message}")
+                }
+            } else if (contentEncoding?.contains("deflate", ignoreCase = true) == true && rawRespBytes.isNotEmpty()) {
+                try {
+                    rawRespBytes = java.util.zip.InflaterInputStream(java.io.ByteArrayInputStream(rawRespBytes)).readBytes()
+                } catch (e: Exception) {
+                    Log.w("ProxyEngine", "Failed Deflate decompress: ${e.message}")
+                }
+            }
+
+            responseBodyString = String(rawRespBytes, Charsets.UTF_8)
 
             val respHeaderMap = mutableMapOf<String, String>()
             respHeaderMap["X-Protocol"] = okResponse.protocol.toString()
             okResponse.headers.forEach { pair ->
-                respHeaderMap[pair.first] = pair.second
+                if (!pair.first.equals("Content-Encoding", ignoreCase = true)) {
+                    respHeaderMap[pair.first] = pair.second
+                }
             }
             responseHeadersJson = "{" + respHeaderMap.entries.joinToString(",") { "\"${it.key}\":\"${it.value.replace("\"", "\\\"")}\"" } + "}"
 

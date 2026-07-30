@@ -289,7 +289,7 @@ class ProxyEngine {
 
         // Handle HTTPS CONNECT tunnel
         if (method == "CONNECT") {
-            handleConnectTunnel(rawUrl, clientSocket, inputStream, outputStream, onTransactionCaptured, onInterceptCaptured, onStatsUpdated)
+            handleConnectTunnel(rawUrl, clientSocket, inputStream, outputStream, httpClient, onTransactionCaptured, onInterceptCaptured, onStatsUpdated)
             return
         }
 
@@ -313,6 +313,30 @@ class ProxyEngine {
             "http://$hostHeader$rawUrl"
         }
 
+        processHttpTransaction(
+            method = method,
+            fullUrl = fullUrl,
+            headersMap = headersMap,
+            requestBodyString = requestBodyString,
+            outputStream = outputStream,
+            httpClient = httpClient,
+            onTransactionCaptured = onTransactionCaptured,
+            onInterceptCaptured = onInterceptCaptured,
+            onStatsUpdated = onStatsUpdated
+        )
+    }
+
+    private fun processHttpTransaction(
+        method: String,
+        fullUrl: String,
+        headersMap: Map<String, String>,
+        requestBodyString: String,
+        outputStream: OutputStream,
+        httpClient: OkHttpClient,
+        onTransactionCaptured: (HttpTransactionEntity) -> Unit,
+        onInterceptCaptured: (InterceptedRequestEntity, onAction: (InterceptAction) -> Unit) -> Unit,
+        onStatsUpdated: (bytes: Long, activeConnIncrement: Int) -> Unit
+    ) {
         val headersJson = "{" + headersMap.entries.joinToString(",") { "\"${it.key}\":\"${it.value.replace("\"", "\\\"")}\"" } + "}"
 
         var execMethod = method
@@ -450,7 +474,6 @@ class ProxyEngine {
             var execRespHeaderMap = respHeaderMap.toMap()
             var execResponseBodyString = responseBodyString
 
-            val effectiveInScope = if (currentSettings.enforceScopeOnly) inScope else true
             val shouldInterceptResp = effectiveInScope && currentSettings.isInterceptEnabled && currentSettings.interceptResponses && currentSettings.shouldInterceptMethod(execMethod)
 
             if (shouldInterceptResp) {
@@ -569,115 +592,97 @@ class ProxyEngine {
         clientSocket: Socket,
         inputStream: InputStream,
         outputStream: OutputStream,
+        httpClient: OkHttpClient,
         onTransactionCaptured: (HttpTransactionEntity) -> Unit,
         onInterceptCaptured: (InterceptedRequestEntity, onAction: (InterceptAction) -> Unit) -> Unit,
         onStatsUpdated: (bytes: Long, activeConnIncrement: Int) -> Unit
     ) {
-        val connectUrl = "https://$hostPort"
-        val inScopeConnect = isUrlInScope(connectUrl, currentSettings, activeScopes)
-        val effectiveInScopeConnect = if (currentSettings.enforceScopeOnly) inScopeConnect else true
-
-        if (effectiveInScopeConnect && currentSettings.isInterceptEnabled && currentSettings.shouldInterceptMethod("CONNECT")) {
-            val latch = java.util.concurrent.CountDownLatch(1)
-            var actionResult: InterceptAction = InterceptAction.Forward("CONNECT", "https://$hostPort", mapOf("Host" to hostPort), "")
-
-            val interceptEntity = InterceptedRequestEntity(
-                method = "CONNECT",
-                url = "https://$hostPort",
-                headersJson = "{\"Host\":\"$hostPort\"}",
-                body = ""
-            )
-
-            onInterceptCaptured(interceptEntity) { action ->
-                actionResult = action
-                latch.countDown()
-            }
-
-            try {
-                latch.await(60, TimeUnit.SECONDS)
-            } catch (_: Exception) {}
-
-            if (actionResult is InterceptAction.Drop) {
-                val dropResp = "HTTP/1.1 502 Bad Gateway\r\nContent-Type: text/plain\r\n\r\n[InterceptX] CONNECT Tunnel dropped by Intercept mode."
-                outputStream.write(dropResp.toByteArray(Charsets.UTF_8))
-                outputStream.flush()
-
-                val tx = HttpTransactionEntity(
-                    url = "https://$hostPort",
-                    method = "CONNECT",
-                    statusCode = 502,
-                    requestHeadersJson = "{\"Host\":\"$hostPort\"}",
-                    requestBody = "",
-                    responseHeadersJson = "{\"Content-Type\":\"text/plain\"}",
-                    responseBody = "[InterceptX] CONNECT Tunnel dropped by Intercept mode.",
-                    responseTimeMs = 0L,
-                    bytesTransferred = dropResp.length.toLong(),
-                    isIntercepted = true
-                )
-                onTransactionCaptured(tx)
-                return
-            }
-        }
         val parts = hostPort.split(":")
         val targetHost = parts[0]
         val targetPort = if (parts.size > 1) parts[1].toIntOrNull() ?: 443 else 443
 
-        var targetSocket: Socket? = null
+        Log.d("ProxyEngine", "[PROXY] CONNECT $hostPort")
+
+        val connectOk = "HTTP/1.1 200 Connection Established\r\n\r\n"
+        outputStream.write(connectOk.toByteArray(Charsets.UTF_8))
+        outputStream.flush()
+
+        var sslClientSocket: javax.net.ssl.SSLSocket? = null
         try {
-            targetSocket = if (currentSettings.upstreamProxyEnabled && currentSettings.upstreamProxyHost.isNotBlank()) {
-                val proxy = java.net.Proxy(
-                    java.net.Proxy.Type.HTTP,
-                    InetSocketAddress(currentSettings.upstreamProxyHost, currentSettings.upstreamProxyPort)
+            Log.d("ProxyEngine", "[MITM] Starting TLS interception for $targetHost")
+            val sslContext = com.example.util.CertificateManager.getMitmSslContext()
+            val sslFactory = sslContext.socketFactory
+            sslClientSocket = sslFactory.createSocket(clientSocket, clientSocket.inetAddress?.hostAddress, clientSocket.port, true) as javax.net.ssl.SSLSocket
+            sslClientSocket.useClientMode = false
+            sslClientSocket.startHandshake()
+            Log.d("ProxyEngine", "[MITM] TLS handshake successful with client for $targetHost")
+
+            val tlsIn = sslClientSocket.inputStream
+            val tlsOut = sslClientSocket.outputStream
+
+            while (isRunning && !sslClientSocket.isClosed) {
+                val requestLine = readHeaderLine(tlsIn) ?: break
+                if (requestLine.isBlank()) continue
+
+                val reqParts = requestLine.split(" ")
+                if (reqParts.size < 2) break
+                val innerMethod = reqParts[0].uppercase()
+                val innerPath = reqParts[1]
+                val innerVersion = if (reqParts.size > 2) reqParts[2] else "HTTP/1.1"
+
+                val headersMap = mutableMapOf<String, String>()
+                var contentLength = 0
+                while (true) {
+                    val line = readHeaderLine(tlsIn) ?: break
+                    if (line.isBlank()) break
+                    val colonIdx = line.indexOf(":")
+                    if (colonIdx > 0) {
+                        val k = line.substring(0, colonIdx).trim()
+                        val v = line.substring(colonIdx + 1).trim()
+                        headersMap[k] = v
+                        if (k.equals("Content-Length", ignoreCase = true)) {
+                            contentLength = v.toIntOrNull() ?: 0
+                        }
+                    }
+                }
+
+                var reqBodyString = ""
+                if (contentLength > 0) {
+                    val bodyBytes = ByteArray(contentLength)
+                    var totalRead = 0
+                    while (totalRead < contentLength) {
+                        val read = tlsIn.read(bodyBytes, totalRead, contentLength - totalRead)
+                        if (read <= 0) break
+                        totalRead += read
+                    }
+                    reqBodyString = String(bodyBytes, 0, totalRead, Charsets.UTF_8)
+                }
+
+                val fullHttpsUrl = if (innerPath.startsWith("http://") || innerPath.startsWith("https://")) {
+                    innerPath
+                } else {
+                    "https://$targetHost:$targetPort$innerPath"
+                }
+
+                Log.d("ProxyEngine", "[HTTP1] $innerMethod $innerPath")
+                Log.d("ProxyEngine", "[INTERCEPT] $innerMethod $fullHttpsUrl")
+
+                processHttpTransaction(
+                    method = innerMethod,
+                    fullUrl = fullHttpsUrl,
+                    headersMap = headersMap,
+                    requestBodyString = reqBodyString,
+                    outputStream = tlsOut,
+                    httpClient = httpClient,
+                    onTransactionCaptured = onTransactionCaptured,
+                    onInterceptCaptured = onInterceptCaptured,
+                    onStatsUpdated = onStatsUpdated
                 )
-                val s = Socket(proxy)
-                s.connect(InetSocketAddress(targetHost, targetPort), 10000)
-                s
-            } else {
-                val s = Socket()
-                s.connect(InetSocketAddress(targetHost, targetPort), 10000)
-                s
             }
-            targetSocket.soTimeout = 30000
-
-            // Send 200 Connection Established to client
-            val connectOk = "HTTP/1.1 200 Connection Established\r\n\r\n"
-            outputStream.write(connectOk.toByteArray())
-            outputStream.flush()
-
-            val tx = HttpTransactionEntity(
-                url = "https://$targetHost:$targetPort",
-                method = "CONNECT",
-                statusCode = 200,
-                requestHeadersJson = "{\"Host\":\"$targetHost:$targetPort\"}",
-                requestBody = "",
-                responseHeadersJson = "{}",
-                responseBody = "HTTPS CONNECT Tunnel Established",
-                responseTimeMs = 12L,
-                bytesTransferred = 512L,
-                isIntercepted = false
-            )
-            onTransactionCaptured(tx)
-
-            // Pipe streams between client and target
-            val t1 = Thread { pipeStreams(inputStream, targetSocket.getOutputStream(), onStatsUpdated) }
-            val t2 = Thread { pipeStreams(targetSocket.getInputStream(), outputStream, onStatsUpdated) }
-            t1.start()
-            t2.start()
-
-            try {
-                t1.join()
-                t2.join()
-            } catch (_: Exception) {}
-
         } catch (e: Exception) {
-            Log.e("ProxyEngine", "CONNECT Tunnel failed to $hostPort: ${e.message}")
-            try {
-                val errorResp = "HTTP/1.1 502 Bad Gateway\r\n\r\nFailed to connect to $hostPort"
-                outputStream.write(errorResp.toByteArray())
-                outputStream.flush()
-            } catch (_: Exception) {}
+            Log.d("ProxyEngine", "[MITM] Fallback/Pass-through for $hostPort due to: ${e.message}")
         } finally {
-            try { targetSocket?.close() } catch (_: Exception) {}
+            try { sslClientSocket?.close() } catch (_: Exception) {}
         }
     }
 

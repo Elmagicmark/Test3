@@ -19,6 +19,7 @@ import java.security.*
 import java.security.cert.CertificateFactory
 import java.security.cert.X509Certificate
 import java.util.*
+import javax.net.ssl.*
 
 object CertificateManager {
 
@@ -27,6 +28,42 @@ object CertificateManager {
 
     private var cachedKeyPair: KeyPair? = null
     private var cachedPemString: String? = null
+    private var cachedSslContext: SSLContext? = null
+
+    @Synchronized
+    fun getMitmSslContext(): SSLContext {
+        cachedSslContext?.let { return it }
+
+        val keyPair = cachedKeyPair ?: run {
+            val keyPairGen = KeyPairGenerator.getInstance("RSA")
+            keyPairGen.initialize(2048)
+            val kp = keyPairGen.generateKeyPair()
+            cachedKeyPair = kp
+            kp
+        }
+
+        val certDerBytes = buildX509DerCertificate(keyPair)
+        val factory = CertificateFactory.getInstance("X.509")
+        val cert = factory.generateCertificate(ByteArrayInputStream(certDerBytes)) as X509Certificate
+
+        val keyStore = java.security.KeyStore.getInstance(java.security.KeyStore.getDefaultType())
+        keyStore.load(null, null)
+        keyStore.setKeyEntry("interceptx_ca", keyPair.private, "password".toCharArray(), arrayOf(cert))
+
+        val kmf = javax.net.ssl.KeyManagerFactory.getInstance(javax.net.ssl.KeyManagerFactory.getDefaultAlgorithm())
+        kmf.init(keyStore, "password".toCharArray())
+
+        val trustAllCerts = arrayOf<TrustManager>(object : X509TrustManager {
+            override fun checkClientTrusted(chain: Array<out X509Certificate>?, authType: String?) {}
+            override fun checkServerTrusted(chain: Array<out X509Certificate>?, authType: String?) {}
+            override fun getAcceptedIssuers(): Array<X509Certificate> = arrayOf()
+        })
+
+        val sslContext = SSLContext.getInstance("TLS")
+        sslContext.init(kmf.keyManagers, trustAllCerts, SecureRandom())
+        cachedSslContext = sslContext
+        return sslContext
+    }
 
     @Synchronized
     fun getOrGenerateCaCertificatePem(context: Context): String {

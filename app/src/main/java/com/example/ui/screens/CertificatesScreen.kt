@@ -177,6 +177,66 @@ fun CertificatesScreen(
                 )
             }
         }
+
+        // Chrome & Android 7+ Restriction Warning & Solutions Card (Reqable style)
+        CyberCard(borderColor = NeonAmber) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(Icons.Default.Warning, contentDescription = "Warning", tint = NeonAmber)
+                    Text(
+                        text = "سبب ظهور خطأ NET::ERR_CERT_AUTHORITY_INVALID في متصفح Chrome",
+                        color = NeonAmber,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace
+                    )
+                }
+
+                Text(
+                    text = "بدايةً من نظام Android 7.0 (API 24)، يتجاهل متصفح Chrome وتطبيقات النظام الشهادات المثبتة من المستخدِم (User CAs) بشكل افتراضي لأسباب أمنية، ويعتمد فقط على شهادات النظام (System CAs).",
+                    color = OnCyberDark,
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace
+                )
+
+                Divider(color = CyberBorder, thickness = 0.5.dp, modifier = Modifier.padding(vertical = 4.dp))
+
+                Text(
+                    text = "الحلول المتاحة للتطبيقات والمتصفحات (مثل Reqable / Burp Suite):",
+                    color = CyberCyan,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace
+                )
+
+                SetupStepItem(
+                    stepNumber = "A",
+                    title = "استخدام متصفح Firefox Mobile (الأسهل بدون روت)",
+                    description = "متصفح Firefox يسمح بالشهادات المحلية: افتح إعدادات Firefox -> حول Firefox -> اضغط على اللوجو 5 مرات لفتح Secret Settings -> فعّل 'Use third-party CA certificates'."
+                )
+
+                SetupStepItem(
+                    stepNumber = "B",
+                    title = "فحص حركة مرور الكمبيوتر (PC Browser)",
+                    description = "قم بتصدير شهادة InterceptX وتثبيتها في Trusted Root Certification Authorities على جهاز الكمبيوتر، ثم اضبط البروكسي في الكمبيوتر على IP الهاتف والمنفذ 8080."
+                )
+
+                SetupStepItem(
+                    stepNumber = "C",
+                    title = "تعديل Network Security Config لتطبيقك (للمطورين)",
+                    description = "أضف <certificates src=\"user\" /> داخل ملف network_security_config.xml في التطبيق المراد فحصه لكي يثق بشهادة المستخدِم."
+                )
+
+                SetupStepItem(
+                    stepNumber = "D",
+                    title = "نقل الشهادة لمجلد النظام (للهواتف ذات الروت / Magisk)",
+                    description = "على الهواتف ذات الروت أو المحاكيات، قم بنقل ملف الشهادة إلى /system/etc/security/cacerts/ ليعتمدها متصفح Chrome وجميع تطبيقات النظام تلقائيًا."
+                )
+            }
+        }
     }
 }
 

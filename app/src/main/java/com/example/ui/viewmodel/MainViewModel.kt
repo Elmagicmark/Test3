@@ -18,7 +18,7 @@ import kotlinx.coroutines.launch
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val db = InterceptXDatabase.getDatabase(application)
-    val repository = ProxyRepository(db, viewModelScope, application)
+    val repository = ProxyRepository(db, viewModelScope)
 
     val proxySettings: StateFlow<ProxySettings> = repository.proxySettings
     val proxyStats: StateFlow<ProxyStats> = repository.proxyStats
@@ -278,12 +278,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun executeRepeaterRequest(tab: RepeaterTabEntity, onResult: (Int, String) -> Unit) {
         viewModelScope.launch {
             val startTime = System.currentTimeMillis()
-            val (status, responseBody) = repository.executeRawHttpRequest(
+            val rawResp = repository.executeRawHttpRequest(
                 method = tab.method,
                 url = tab.url,
                 headersMap = parseJsonToMap(tab.headersJson),
                 bodyString = tab.body
             )
+            val status = rawResp.first
+            val responseBody = rawResp.second
             val elapsed = System.currentTimeMillis() - startTime
             val updatedTab = tab.copy(
                 lastResponseStatus = status,
@@ -305,12 +307,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     ) {
         viewModelScope.launch {
             val startTime = System.currentTimeMillis()
-            val (status, responseBody) = repository.executeRawHttpRequest(
+            val rawResp = repository.executeRawHttpRequest(
                 method = method,
                 url = url,
                 headersMap = parseJsonToMap(headersJson),
                 bodyString = body
             )
+            val status = rawResp.first
+            val responseBody = rawResp.second
             val elapsed = System.currentTimeMillis() - startTime
             
             // Save transaction log

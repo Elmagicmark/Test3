@@ -68,19 +68,6 @@ android {
     buildConfig = true
   }
   testOptions { unitTests { isIncludeAndroidResources = true } }
-  packaging {
-    resources {
-      excludes += "/META-INF/{AL2.0,LGPL2.1}"
-      // bcprov/bcutil/bcpkix each ship an identical OSGI manifest under
-      // META-INF/versions/9/, which collides during merge otherwise.
-      excludes += "/META-INF/versions/9/OSGI-INF/**"
-      excludes += "/META-INF/versions/9/module-info.class"
-      excludes += "/META-INF/*.RSA"
-      excludes += "/META-INF/*.SF"
-      excludes += "/META-INF/*.DSA"
-      excludes += "/META-INF/INDEX.LIST"
-    }
-  }
 }
 
 // Configure the Secrets Gradle Plugin to use .env and .env.example files
@@ -136,9 +123,6 @@ dependencies {
   implementation(libs.logging.interceptor)
   implementation(libs.moshi.kotlin)
   implementation(libs.okhttp)
-  // BouncyCastle - dynamic root/leaf certificate generation for TLS interception (MITM)
-  implementation("org.bouncycastle:bcprov-jdk18on:1.78.1")
-  implementation("org.bouncycastle:bcpkix-jdk18on:1.78.1")
   // implementation(libs.play.services.location)
   implementation(libs.retrofit)
   testImplementation(libs.androidx.compose.ui.test.junit4)

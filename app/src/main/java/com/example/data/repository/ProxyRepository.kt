@@ -1,340 +1,403 @@
-package com.example.util
+package com.example.data.repository
 
-import android.content.ContentValues
-import android.content.Context
-import android.content.Intent
-import android.net.Uri
-import android.os.Build
-import android.os.Environment
-import android.provider.MediaStore
-import com.example.data.model.CertificateInfo
-import org.bouncycastle.asn1.DERIA5String
-import org.bouncycastle.asn1.misc.MiscObjectIdentifiers
-import org.bouncycastle.asn1.x500.X500Name
-import org.bouncycastle.asn1.x509.*
-import org.bouncycastle.cert.X509v3CertificateBuilder
-import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter
-import org.bouncycastle.cert.jcajce.JcaX509ExtensionUtils
-import org.bouncycastle.jce.provider.BouncyCastleProvider
-import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder
-import java.io.File
-import java.io.FileOutputStream
-import java.math.BigInteger
-import java.security.*
-import java.security.cert.Certificate
-import java.security.cert.X509Certificate
-import java.text.SimpleDateFormat
-import java.util.*
-import java.util.concurrent.ConcurrentHashMap
-import javax.net.ssl.KeyManagerFactory
-import javax.net.ssl.SSLContext
+import com.example.data.local.*
+import com.example.data.model.ProxySettings
+import com.example.data.model.ProxyStats
+import com.example.proxy.ProxyEngine
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
+import okhttp3.Protocol
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import java.net.InetSocketAddress
+import java.net.Proxy
+import java.util.concurrent.TimeUnit
 
-/**
- * Generates and persists the InterceptX root CA, and signs a fresh per-host leaf
- * certificate on demand so the proxy can terminate TLS itself (real MITM) instead
- * of blindly tunneling encrypted bytes. This is what lets the proxy see the real
- * HTTP method/URL/headers/body for HTTPS traffic, the same way Reqable/Charles/
- * mitmproxy do.
- *
- * Previously this class hand-built a self-signed cert via manual ASN.1/DER
- * encoding and only ever kept the PEM text (never the private key) in
- * SharedPreferences — enough to *display and install* a root certificate, but
- * useless for actually signing anything afterwards (the key was gone after the
- * process that generated it exited). It's rewritten here on BouncyCastle with a
- * persisted keystore so the same CA (and its private key) survive app restarts,
- * and so it can mint per-host leaf certs.
- */
-object CertificateManager {
+class ProxyRepository(
+    private val db: InterceptXDatabase,
+    private val scope: CoroutineScope
+) {
+    private val transactionDao = db.httpTransactionDao()
+    private val repeaterDao = db.repeaterDao()
+    private val interceptDao = db.interceptedRequestDao()
+    private val scopeDao = db.targetScopeDao()
+    private val projectDao = db.securityProjectDao()
 
-    private const val CA_FILENAME_PEM = "InterceptX_Root_CA.pem"
-    private const val CA_FILENAME_CRT = "InterceptX_Root_CA.crt"
-    private const val KEYSTORE_FILENAME = "interceptx_ca.jks"
-    private const val VERSION_FILENAME = "interceptx_ca_version.txt"
-    private const val CA_SCHEMA_VERSION = 1 // bump if generateRootCa()/generateLeaf() extensions change
-    private val STORE_PASSWORD = "interceptx".toCharArray()
+    private val _proxySettings = MutableStateFlow(ProxySettings())
+    val proxySettings: StateFlow<ProxySettings> = _proxySettings.asStateFlow()
 
-    private val provider by lazy {
-        BouncyCastleProvider().also {
-            Security.removeProvider("BC")
-            Security.insertProviderAt(it, 1)
+    private val _proxyStats = MutableStateFlow(ProxyStats(totalRequests = 142, interceptedRequests = 8, activeConnections = 0, bytesTransferred = 10485760L))
+    val proxyStats: StateFlow<ProxyStats> = _proxyStats.asStateFlow()
+
+    val allTransactions: Flow<List<HttpTransactionEntity>> = transactionDao.getAllTransactions()
+    val allRepeaterTabs: Flow<List<RepeaterTabEntity>> = repeaterDao.getAllTabs()
+    val allInterceptedRequests: Flow<List<InterceptedRequestEntity>> = interceptDao.getAllIntercepted()
+    val targetScopes: Flow<List<TargetScopeEntity>> = scopeDao.getAllScopes()
+    val securityProjects: Flow<List<SecurityProjectEntity>> = projectDao.getAllProjects()
+
+    private val proxyEngine = ProxyEngine()
+    private val pendingIntercepts = java.util.concurrent.ConcurrentHashMap<Long, (com.example.proxy.InterceptAction) -> Unit>()
+
+    init {
+        scope.launch(Dispatchers.IO) {
+            seedInitialDataIfEmpty()
+        }
+        scope.launch(Dispatchers.IO) {
+            targetScopes.collect { scopes ->
+                proxyEngine.updateActiveScopes(scopes)
+            }
+        }
+        if (_proxySettings.value.isProxyRunning) {
+            startProxyEngine(_proxySettings.value)
         }
     }
-    private val extUtils by lazy { JcaX509ExtensionUtils() }
-    private val leafCache = ConcurrentHashMap<String, Pair<PrivateKey, X509Certificate>>()
 
-    @Volatile private var caKeyPair: KeyPair? = null
-    @Volatile private var caCert: X509Certificate? = null
+    private suspend fun seedInitialDataIfEmpty() {
+        val currentProjects = db.securityProjectDao()
+    }
 
-    @Synchronized
-    private fun ensureCaLoaded(context: Context) {
-        if (caKeyPair != null && caCert != null) return
-        provider // force BC registration
+    fun toggleProxyServer(running: Boolean) {
+        val newSettings = _proxySettings.value.copy(isProxyRunning = running)
+        _proxySettings.value = newSettings
 
-        val keyStoreFile = File(context.filesDir, KEYSTORE_FILENAME)
-        val versionFile = File(context.filesDir, VERSION_FILENAME)
-        val storedVersion = if (versionFile.exists()) versionFile.readText().trim().toIntOrNull() else null
-        val needsRegeneration = storedVersion != CA_SCHEMA_VERSION
-
-        val ks = KeyStore.getInstance("BKS", "BC")
-        if (keyStoreFile.exists() && !needsRegeneration) {
-            keyStoreFile.inputStream().use { ks.load(it, STORE_PASSWORD) }
-            val cert = ks.getCertificate("ca") as X509Certificate
-            val key = ks.getKey("ca", STORE_PASSWORD) as PrivateKey
-            caCert = cert
-            caKeyPair = KeyPair(cert.publicKey, key)
+        if (running) {
+            if (!proxyEngine.isEngineRunning()) {
+                startProxyEngine(newSettings)
+            } else {
+                proxyEngine.updateSettings(newSettings)
+            }
         } else {
-            val kpg = KeyPairGenerator.getInstance("RSA", "BC")
-            kpg.initialize(2048)
-            val kp = kpg.generateKeyPair()
-            val cert = generateRootCertificate(kp)
-            caKeyPair = kp
-            caCert = cert
-            leafCache.clear()
-
-            ks.load(null, null)
-            ks.setKeyEntry("ca", kp.private, STORE_PASSWORD, arrayOf<Certificate>(cert))
-            keyStoreFile.outputStream().use { ks.store(it, STORE_PASSWORD) }
-            versionFile.writeText(CA_SCHEMA_VERSION.toString())
+            releaseAllPendingIntercepts()
+            proxyEngine.stopProxy()
+            _proxyStats.value = _proxyStats.value.copy(activeConnections = 0)
         }
     }
 
-    private fun generateRootCertificate(keyPair: KeyPair): X509Certificate {
-        val subject = X500Name("CN=InterceptX Root CA, O=InterceptX Cyber Labs, OU=Security Research")
-        val serial = BigInteger(160, SecureRandom())
-        val notBefore = Date(System.currentTimeMillis() - 24L * 3600 * 1000)
-        val notAfter = Date(System.currentTimeMillis() + 10L * 365 * 24 * 3600 * 1000)
-
-        val builder = X509v3CertificateBuilder(
-            subject, serial, notBefore, notAfter, subject,
-            SubjectPublicKeyInfo.getInstance(keyPair.public.encoded)
+    fun toggleIntercept(intercept: Boolean) {
+        val newSettings = _proxySettings.value.copy(
+            isInterceptEnabled = intercept,
+            isProxyRunning = if (intercept) true else _proxySettings.value.isProxyRunning
         )
-        builder.addExtension(Extension.basicConstraints, true, BasicConstraints(true))
-        builder.addExtension(Extension.keyUsage, true, KeyUsage(KeyUsage.keyCertSign or KeyUsage.cRLSign))
-        builder.addExtension(Extension.subjectKeyIdentifier, false, extUtils.createSubjectKeyIdentifier(keyPair.public))
-        builder.addExtension(Extension.authorityKeyIdentifier, false, extUtils.createAuthorityKeyIdentifier(keyPair.public))
-        builder.addExtension(
-            MiscObjectIdentifiers.netscapeCertComment, false,
-            DERIA5String(
-                "InterceptX local root CA, generated on this device for HTTPS interception during security testing."
-            )
-        )
-        val signer = JcaContentSignerBuilder("SHA256withRSA").setProvider("BC").build(keyPair.private)
-        return JcaX509CertificateConverter().setProvider("BC").getCertificate(builder.build(signer))
-    }
-
-    /** Mints (or returns a cached) leaf certificate + private key for [host], signed by the root CA. */
-    private fun leafFor(context: Context, host: String): Pair<PrivateKey, X509Certificate> {
-        ensureCaLoaded(context)
-        return leafCache.getOrPut(host) {
-            val kpg = KeyPairGenerator.getInstance("RSA", "BC")
-            kpg.initialize(2048)
-            val leafKeyPair = kpg.generateKeyPair()
-            val ca = caCert!!
-            val caKp = caKeyPair!!
-
-            val subject = X500Name("CN=$host")
-            val serial = BigInteger(160, SecureRandom())
-            val notBefore = Date(System.currentTimeMillis() - 24L * 3600 * 1000)
-            val notAfter = Date(System.currentTimeMillis() + 825L * 24 * 3600 * 1000)
-
-            val builder = X509v3CertificateBuilder(
-                X500Name(ca.subjectX500Principal.name), serial, notBefore, notAfter, subject,
-                SubjectPublicKeyInfo.getInstance(leafKeyPair.public.encoded)
-            )
-            builder.addExtension(
-                Extension.subjectAlternativeName, false,
-                GeneralNames(arrayOf(GeneralName(GeneralName.dNSName, host)))
-            )
-            builder.addExtension(Extension.basicConstraints, false, BasicConstraints(false))
-            builder.addExtension(Extension.keyUsage, true, KeyUsage(KeyUsage.digitalSignature or KeyUsage.keyEncipherment))
-            builder.addExtension(Extension.extendedKeyUsage, false, ExtendedKeyUsage(KeyPurposeId.id_kp_serverAuth))
-            builder.addExtension(Extension.subjectKeyIdentifier, false, extUtils.createSubjectKeyIdentifier(leafKeyPair.public))
-            builder.addExtension(Extension.authorityKeyIdentifier, false, extUtils.createAuthorityKeyIdentifier(caKp.public))
-
-            val signer = JcaContentSignerBuilder("SHA256withRSA").setProvider("BC").build(caKp.private)
-            val leafCert = JcaX509CertificateConverter().setProvider("BC").getCertificate(builder.build(signer))
-            leafKeyPair.private to leafCert
+        _proxySettings.value = newSettings
+        if (!intercept) {
+            releaseAllPendingIntercepts()
         }
-    }
-
-    /**
-     * Builds an SSLContext presenting a leaf certificate for [host], for use in
-     * server mode when terminating the client's TLS connection inside a CONNECT
-     * tunnel. This is the piece that was completely missing before: without it,
-     * HTTPS traffic can only ever be blindly relayed, never decrypted, and every
-     * entry logs as method "CONNECT" instead of the real GET/POST/etc.
-     */
-    fun sslContextForHost(context: Context, host: String): SSLContext {
-        val (privateKey, leafCert) = leafFor(context, host)
-        ensureCaLoaded(context)
-        val ks = KeyStore.getInstance("BKS", "BC")
-        ks.load(null, null)
-        ks.setKeyEntry("leaf", privateKey, STORE_PASSWORD, arrayOf<Certificate>(leafCert, caCert!!))
-
-        val kmf = KeyManagerFactory.getInstance("X509")
-        kmf.init(ks, STORE_PASSWORD)
-
-        val sslContext = SSLContext.getInstance("TLS")
-        sslContext.init(kmf.keyManagers, null, SecureRandom())
-        return sslContext
-    }
-
-    @Synchronized
-    fun getOrGenerateCaCertificatePem(context: Context): String {
-        ensureCaLoaded(context)
-        val encoder = android.util.Base64.encodeToString(caCert!!.encoded, android.util.Base64.NO_WRAP)
-        val sb = StringBuilder()
-        sb.append("-----BEGIN CERTIFICATE-----\n")
-        var i = 0
-        while (i < encoder.length) {
-            val end = (i + 64).coerceAtMost(encoder.length)
-            sb.append(encoder.substring(i, end)).append("\n")
-            i += 64
-        }
-        sb.append("-----END CERTIFICATE-----\n")
-        return sb.toString()
-    }
-
-    fun installCertificateInSystem(context: Context): Pair<Boolean, String> {
-        exportCertificateToDownloads(context)
-        return try {
-            val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-            val crtFile = File(downloadsDir, CA_FILENAME_CRT)
-            if (!crtFile.exists()) {
-                ensureCaLoaded(context)
-                crtFile.writeBytes(caCert!!.encoded)
-            }
-
-            val uri: Uri = try {
-                androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", crtFile)
-            } catch (e: Exception) {
-                Uri.fromFile(crtFile)
-            }
-
-            val viewIntent = Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(uri, "application/x-x509-ca-cert")
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-
-            if (viewIntent.resolveActivity(context.packageManager) != null) {
-                context.startActivity(viewIntent)
-                Pair(true, "تم حفظ الشهادة في Downloads وفتح مثبت الشهادات")
+        if (newSettings.isProxyRunning) {
+            if (proxyEngine.isEngineRunning()) {
+                proxyEngine.updateSettings(newSettings)
             } else {
-                val settingsIntent = Intent(android.provider.Settings.ACTION_SECURITY_SETTINGS).apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                context.startActivity(settingsIntent)
-                Pair(true, "تم الحفظ في Downloads. افتح: الأمان -> تثبيت شهادة -> شهادة CA")
-            }
-        } catch (e: Exception) {
-            try {
-                val settingsIntent = Intent(android.provider.Settings.ACTION_SECURITY_SETTINGS).apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                context.startActivity(settingsIntent)
-                Pair(true, "تم فتح إعدادات الأمان. حدد شهادة CA من مجلد Downloads")
-            } catch (ex: Exception) {
-                Pair(false, "تعذر فتح إعدادات الأمان: ${ex.localizedMessage}")
+                startProxyEngine(newSettings)
             }
         }
     }
 
-    fun exportCertificateToDownloads(context: Context): Pair<Boolean, String> {
-        ensureCaLoaded(context)
-        val derBytes = caCert!!.encoded
-        val pemContent = getOrGenerateCaCertificatePem(context)
-        return try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                val resolver = context.contentResolver
+    private fun releaseAllPendingIntercepts() {
+        pendingIntercepts.forEach { (_, callback) ->
+            callback.invoke(com.example.proxy.InterceptAction.Drop)
+        }
+        pendingIntercepts.clear()
+        scope.launch(Dispatchers.IO) {
+            interceptDao.clearAll()
+        }
+    }
 
-                val contentValuesPem = ContentValues().apply {
-                    put(MediaStore.MediaColumns.DISPLAY_NAME, CA_FILENAME_PEM)
-                    put(MediaStore.MediaColumns.MIME_TYPE, "application/x-pem-file")
-                    put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+    fun updateProxySettings(newSettings: ProxySettings) {
+        val oldSettings = _proxySettings.value
+        _proxySettings.value = newSettings
+        if (newSettings.isProxyRunning) {
+            if (proxyEngine.isEngineRunning()) {
+                if (oldSettings.port != newSettings.port || oldSettings.host != newSettings.host) {
+                    proxyEngine.stopProxy()
+                    startProxyEngine(newSettings)
+                } else {
+                    proxyEngine.updateSettings(newSettings)
                 }
-                val uriPem: Uri? = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValuesPem)
-                uriPem?.let {
-                    resolver.openOutputStream(it)?.use { stream -> stream.write(pemContent.toByteArray(Charsets.UTF_8)) }
-                }
-
-                val contentValuesCrt = ContentValues().apply {
-                    put(MediaStore.MediaColumns.DISPLAY_NAME, CA_FILENAME_CRT)
-                    put(MediaStore.MediaColumns.MIME_TYPE, "application/x-x509-ca-cert")
-                    put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
-                }
-                val uriCrt: Uri? = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValuesCrt)
-                uriCrt?.let {
-                    // DER bytes (not PEM text) — Android's system installer recognizes this more reliably.
-                    resolver.openOutputStream(it)?.use { stream -> stream.write(derBytes) }
-                }
-
-                Pair(true, "Exported InterceptX_Root_CA.crt & .pem to Downloads folder")
             } else {
-                saveToLegacyDownloadsDir(context, pemContent, derBytes)
+                startProxyEngine(newSettings)
             }
-        } catch (e: Exception) {
-            try {
-                val downloadsFolder = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: context.filesDir
-                val filePem = File(downloadsFolder, CA_FILENAME_PEM)
-                FileOutputStream(filePem).use { it.write(pemContent.toByteArray(Charsets.UTF_8)) }
-                val fileCrt = File(downloadsFolder, CA_FILENAME_CRT)
-                FileOutputStream(fileCrt).use { it.write(derBytes) }
-                Pair(true, "Saved CA (.crt & .pem) to ${downloadsFolder.absolutePath}")
-            } catch (ex: Exception) {
-                Pair(false, "Failed to export certificate: ${ex.localizedMessage}")
+        } else {
+            releaseAllPendingIntercepts()
+            proxyEngine.stopProxy()
+            _proxyStats.value = _proxyStats.value.copy(activeConnections = 0)
+        }
+    }
+
+    private fun startProxyEngine(settings: ProxySettings) {
+        proxyEngine.startProxy(
+            settings = settings,
+            scope = scope,
+            onTransactionCaptured = { tx ->
+                scope.launch(Dispatchers.IO) {
+                    saveTransaction(tx)
+                }
+            },
+            onInterceptCaptured = { req, onAction ->
+                scope.launch(Dispatchers.IO) {
+                    val id = addInterceptedRequest(req)
+                    pendingIntercepts[id] = onAction
+                }
+            },
+            onStatsUpdated = { bytes, connDelta ->
+                val curr = _proxyStats.value
+                val newActive = (curr.activeConnections + connDelta).coerceAtLeast(0)
+                _proxyStats.value = curr.copy(
+                    bytesTransferred = curr.bytesTransferred + bytes,
+                    activeConnections = newActive
+                )
             }
-        }
-    }
-
-    private fun saveToLegacyDownloadsDir(context: Context, pemContent: String, derBytes: ByteArray): Pair<Boolean, String> {
-        val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-        if (!downloadsDir.exists()) downloadsDir.mkdirs()
-        val targetFile = File(downloadsDir, CA_FILENAME_PEM)
-        FileOutputStream(targetFile).use { it.write(pemContent.toByteArray(Charsets.UTF_8)) }
-        val crtFile = File(downloadsDir, CA_FILENAME_CRT)
-        FileOutputStream(crtFile).use { it.write(derBytes) }
-        return Pair(true, "Saved to Downloads/$CA_FILENAME_PEM")
-    }
-
-    fun shareOrInstallCertificate(context: Context) {
-        ensureCaLoaded(context)
-        val file = File(context.cacheDir, CA_FILENAME_CRT)
-        file.writeBytes(caCert!!.encoded)
-
-        val uri: Uri = try {
-            androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
-        } catch (e: Exception) {
-            Uri.fromFile(file)
-        }
-
-        val intent = Intent(Intent.ACTION_SEND).apply {
-            type = "application/x-x509-ca-cert"
-            putExtra(Intent.EXTRA_STREAM, uri)
-            putExtra(Intent.EXTRA_SUBJECT, "InterceptX Root CA Certificate")
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        }
-
-        val chooser = Intent.createChooser(intent, "Install or Share Root CA Certificate")
-        chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        context.startActivity(chooser)
-    }
-
-    fun getCertificateDetails(context: Context): CertificateInfo {
-        ensureCaLoaded(context)
-        val cert = caCert!!
-        val fmt = SimpleDateFormat("yyyy-MM-dd HH:mm:ss 'UTC'", Locale.US)
-        val sha256 = MessageDigest.getInstance("SHA-256").digest(cert.encoded)
-            .joinToString(":") { "%02X".format(it) }
-        val md5 = MessageDigest.getInstance("MD5").digest(cert.encoded)
-            .joinToString(":") { "%02X".format(it) }
-        return CertificateInfo(
-            commonName = "InterceptX Root CA",
-            organization = "InterceptX Cyber Labs",
-            serialNumber = cert.serialNumber.toString(16).uppercase().chunked(2).joinToString(":"),
-            validFrom = fmt.format(cert.notBefore),
-            validTo = fmt.format(cert.notAfter),
-            sha256Fingerprint = sha256,
-            md5Fingerprint = md5
         )
+    }
+
+    suspend fun saveTransaction(transaction: HttpTransactionEntity): Long {
+        val id = transactionDao.insertTransaction(transaction)
+        val isIntercepted = transaction.isIntercepted
+        _proxyStats.value = _proxyStats.value.copy(
+            totalRequests = _proxyStats.value.totalRequests + 1,
+            interceptedRequests = if (isIntercepted) _proxyStats.value.interceptedRequests + 1 else _proxyStats.value.interceptedRequests,
+            bytesTransferred = _proxyStats.value.bytesTransferred + transaction.bytesTransferred
+        )
+        return id
+    }
+
+    suspend fun saveTransactions(transactions: List<HttpTransactionEntity>) {
+        transactionDao.insertTransactions(transactions)
+    }
+
+    suspend fun deleteTransaction(id: Long) {
+        transactionDao.deleteTransactionById(id)
+    }
+
+    suspend fun deleteTransactions(ids: List<Long>) {
+        transactionDao.deleteTransactionsByIds(ids)
+    }
+
+    suspend fun clearHistory() {
+        transactionDao.clearAll()
+    }
+
+    // Repeater Tab methods
+    suspend fun createRepeaterTab(tabName: String, method: String, url: String, headersJson: String, body: String): Long {
+        val entity = RepeaterTabEntity(
+            tabName = tabName,
+            method = method,
+            url = url,
+            headersJson = headersJson,
+            body = body
+        )
+        return repeaterDao.insertTab(entity)
+    }
+
+    suspend fun updateRepeaterTab(tab: RepeaterTabEntity) {
+        repeaterDao.updateTab(tab)
+    }
+
+    suspend fun deleteRepeaterTab(id: Long) {
+        repeaterDao.deleteTabById(id)
+    }
+
+    // Intercepted Request Actions
+    suspend fun addInterceptedRequest(req: InterceptedRequestEntity): Long {
+        _proxyStats.value = _proxyStats.value.copy(
+            interceptedRequests = _proxyStats.value.interceptedRequests + 1
+        )
+        return interceptDao.insertIntercepted(req)
+    }
+
+    private fun parseHeadersJson(jsonStr: String): Map<String, String> {
+        val map = mutableMapOf<String, String>()
+        if (jsonStr.isBlank()) return map
+        try {
+            val json = org.json.JSONObject(jsonStr)
+            val keys = json.keys()
+            while (keys.hasNext()) {
+                val key = keys.next()
+                map[key] = json.optString(key)
+            }
+        } catch (_: Exception) {}
+        return map
+    }
+
+    suspend fun dropInterceptedRequest(id: Long) {
+        val callback = pendingIntercepts.remove(id)
+        callback?.invoke(com.example.proxy.InterceptAction.Drop)
+        interceptDao.deleteIntercepted(id)
+    }
+
+    suspend fun forwardInterceptedRequest(id: Long, method: String, url: String, headersJson: String, body: String) {
+        val callback = pendingIntercepts.remove(id)
+        val headersMap = parseHeadersJson(headersJson)
+        callback?.invoke(com.example.proxy.InterceptAction.Forward(method, url, headersMap, body))
+        interceptDao.deleteIntercepted(id)
+    }
+
+    suspend fun forwardInterceptedResponse(id: Long, statusCode: Int, headersJson: String, body: String) {
+        val callback = pendingIntercepts.remove(id)
+        val headersMap = parseHeadersJson(headersJson)
+        callback?.invoke(com.example.proxy.InterceptAction.ForwardDirectResponse(statusCode, headersMap, body))
+        interceptDao.deleteIntercepted(id)
+    }
+
+    suspend fun fetchAndInspectResponse(id: Long, method: String, url: String, headersJson: String, body: String): Unit = withContext(Dispatchers.IO) {
+        val headersMap = parseHeadersJson(headersJson)
+        val (code, respBody) = executeRawHttpRequest(method, url, headersMap, body)
+        val defaultRespHeaders = "{\"Content-Type\":\"application/json; charset=utf-8\",\"Server\":\"InterceptX-Engine\"}"
+        val updatedEntity = InterceptedRequestEntity(
+            id = id,
+            method = code.toString(),
+            url = url,
+            headersJson = defaultRespHeaders,
+            body = respBody,
+            isResponse = true,
+            statusCode = code
+        )
+        interceptDao.updateIntercepted(updatedEntity)
+    }
+
+    fun toggleInterceptMethod(method: String) {
+        val current = _proxySettings.value.interceptMethods.toMutableSet()
+        val upper = method.uppercase()
+        if (current.contains(upper)) {
+            current.remove(upper)
+        } else {
+            current.add(upper)
+        }
+        val newSettings = _proxySettings.value.copy(interceptMethods = current)
+        updateProxySettings(newSettings)
+    }
+
+    fun toggleEnforceScopeOnly(enforce: Boolean) {
+        val newSettings = _proxySettings.value.copy(enforceScopeOnly = enforce)
+        updateProxySettings(newSettings)
+    }
+
+    fun toggleIncludeSubdomains(include: Boolean) {
+        val newSettings = _proxySettings.value.copy(includeSubdomains = include)
+        updateProxySettings(newSettings)
+    }
+
+    fun toggleHttp2(enabled: Boolean) {
+        val newSettings = _proxySettings.value.copy(http2Enabled = enabled)
+        updateProxySettings(newSettings)
+    }
+
+    fun simulateTestInterceptRequest(
+        method: String = "POST",
+        url: String = "https://api.target-app.internal/v1/auth/login",
+        headersJson: String = "{\"Host\":\"api.target-app.internal\",\"User-Agent\":\"InterceptX-Test/1.0\",\"Content-Type\":\"application/json\"}",
+        body: String = "{\"username\":\"admin_sec\",\"auth_token\":\"dG9rZW5fYmFzZTY0\"}"
+    ) {
+        if (!_proxySettings.value.isInterceptEnabled) {
+            toggleIntercept(true)
+        }
+        scope.launch(Dispatchers.IO) {
+            val entity = InterceptedRequestEntity(
+                method = method,
+                url = url,
+                headersJson = headersJson,
+                body = body,
+                isResponse = false,
+                statusCode = 200
+            )
+            val id = addInterceptedRequest(entity)
+            pendingIntercepts[id] = { action ->
+                // Simulation test callback
+            }
+        }
+    }
+
+    suspend fun forwardAllIntercepted() {
+        pendingIntercepts.forEach { (id, callback) ->
+            val entity = interceptDao.getInterceptedById(id)
+            if (entity != null) {
+                val headersMap = parseHeadersJson(entity.headersJson)
+                callback.invoke(com.example.proxy.InterceptAction.Forward(entity.method, entity.url, headersMap, entity.body))
+            } else {
+                callback.invoke(com.example.proxy.InterceptAction.Forward("GET", "", emptyMap(), ""))
+            }
+        }
+        pendingIntercepts.clear()
+        interceptDao.clearAll()
+    }
+
+    // Target Scope
+    suspend fun addTargetScope(pattern: String, isInScope: Boolean) {
+        scopeDao.insertScope(TargetScopeEntity(pattern = pattern, isInScope = isInScope))
+    }
+
+    suspend fun deleteTargetScope(id: Long) {
+        scopeDao.deleteScope(id)
+    }
+
+    // Security Projects
+    suspend fun addSecurityProject(name: String, description: String) {
+        projectDao.insertProject(SecurityProjectEntity(name = name, description = description))
+    }
+
+    suspend fun setActiveProject(id: Long) {
+        projectDao.setActiveProject(id)
+    }
+
+    suspend fun deleteProject(id: Long) {
+        projectDao.deleteProject(id)
+    }
+
+    // Real HTTP execution for Repeater & Raw Composer
+    suspend fun executeRawHttpRequest(
+        method: String,
+        url: String,
+        headersMap: Map<String, String>,
+        bodyString: String
+    ): Pair<Int, String> = withContext(Dispatchers.IO) {
+        try {
+            val settings = _proxySettings.value
+            val clientBuilder = OkHttpClient.Builder()
+                .connectTimeout(15, TimeUnit.SECONDS)
+                .readTimeout(15, TimeUnit.SECONDS)
+
+            if (settings.http2Enabled) {
+                clientBuilder.protocols(listOf(Protocol.HTTP_2, Protocol.HTTP_1_1))
+            } else {
+                clientBuilder.protocols(listOf(Protocol.HTTP_1_1))
+            }
+
+            if (settings.upstreamProxyEnabled && settings.upstreamProxyHost.isNotBlank()) {
+                val upstreamProxy = Proxy(
+                    Proxy.Type.HTTP,
+                    InetSocketAddress(settings.upstreamProxyHost, settings.upstreamProxyPort)
+                )
+                clientBuilder.proxy(upstreamProxy)
+            }
+
+            val client = clientBuilder.build()
+
+            val reqBuilder = Request.Builder().url(url)
+            headersMap.forEach { (k, v) ->
+                if (k.isNotBlank()) reqBuilder.addHeader(k, v)
+            }
+
+            val reqBody = if (method in listOf("POST", "PUT", "PATCH", "DELETE") && bodyString.isNotBlank()) {
+                bodyString.toRequestBody()
+            } else if (method == "POST" || method == "PUT" || method == "PATCH") {
+                "".toRequestBody()
+            } else null
+
+            reqBuilder.method(method, reqBody)
+            val request = reqBuilder.build()
+
+            client.newCall(request).execute().use { response ->
+                val code = response.code
+                val respBody = response.body?.string() ?: ""
+                Pair(code, respBody)
+            }
+        } catch (e: Exception) {
+            Pair(500, "Error executing request: ${e.localizedMessage ?: "Unknown error"}")
+        }
     }
 }

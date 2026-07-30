@@ -18,7 +18,7 @@ import kotlinx.coroutines.launch
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val db = InterceptXDatabase.getDatabase(application)
-    val repository = ProxyRepository(db, viewModelScope)
+    val repository = ProxyRepository(db, viewModelScope, application)
 
     val proxySettings: StateFlow<ProxySettings> = repository.proxySettings
     val proxyStats: StateFlow<ProxyStats> = repository.proxyStats

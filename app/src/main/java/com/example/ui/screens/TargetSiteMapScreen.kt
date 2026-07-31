@@ -5,6 +5,9 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -146,11 +149,22 @@ fun TargetSiteMapScreen(
                         Text(
                             text = "TARGET CRAWLER & RECON ENGINE",
                             color = OnCyberDark,
-                            fontSize = 12.sp,
+                            fontSize = 11.5.sp,
                             fontWeight = FontWeight.Bold,
                             fontFamily = FontFamily.Monospace
                         )
                     }
+                }
+
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    OutlinedTextField(
+                        value = crawlerTargetUrl,
+                        onValueChange = { crawlerTargetUrl = it },
+                        placeholder = { Text("https://target-domain.com", fontSize = 11.sp) },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                        textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = OnCyberDark)
+                    )
 
                     Button(
                         onClick = {
@@ -200,27 +214,20 @@ fun TargetSiteMapScreen(
                         colors = ButtonDefaults.buttonColors(containerColor = PurpleNeon, contentColor = Color.White),
                         shape = RoundedCornerShape(4.dp),
                         enabled = !isCrawling,
-                        modifier = Modifier.testTag("start_crawler_button")
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                        modifier = Modifier
+                            .height(32.dp)
+                            .testTag("start_crawler_button")
                     ) {
                         if (isCrawling) {
-                            CircularProgressIndicator(modifier = Modifier.size(14.dp), color = Color.White, strokeWidth = 2.dp)
+                            CircularProgressIndicator(modifier = Modifier.size(12.dp), color = Color.White, strokeWidth = 1.5.dp)
                         } else {
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Icon(Icons.Default.Search, contentDescription = "Crawl", modifier = Modifier.size(14.dp))
-                                Text("CRAWL TARGET", fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                                Icon(Icons.Default.Search, contentDescription = "Crawl", modifier = Modifier.size(12.dp))
+                                Text("CRAWL", fontSize = 9.5.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
                             }
                         }
                     }
-                }
-
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    OutlinedTextField(
-                        value = crawlerTargetUrl,
-                        onValueChange = { crawlerTargetUrl = it },
-                        placeholder = { Text("https://target-domain.com", fontSize = 11.sp) },
-                        modifier = Modifier.weight(1f),
-                        textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = OnCyberDark)
-                    )
                 }
 
                 Text(

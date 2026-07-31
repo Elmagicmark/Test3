@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Repeat
@@ -116,6 +117,7 @@ fun TransactionDetailDialog(
                         .background(CyberDarkBg)
                         .border(1.dp, CyberBorder, RoundedCornerShape(6.dp))
                         .padding(8.dp)
+                        .horizontalScroll(rememberScrollState())
                 ) {
                     Text(
                         text = transaction.url,
@@ -177,6 +179,7 @@ fun TransactionDetailDialog(
                                 .background(CyberDarkBg)
                                 .border(1.dp, CyberBorder, RoundedCornerShape(4.dp))
                                 .padding(8.dp)
+                                .horizontalScroll(rememberScrollState())
                         ) {
                             Text(
                                 text = transaction.requestHeadersJson,
@@ -195,6 +198,7 @@ fun TransactionDetailDialog(
                                 .background(CyberDarkBg)
                                 .border(1.dp, CyberBorder, RoundedCornerShape(4.dp))
                                 .padding(8.dp)
+                                .horizontalScroll(rememberScrollState())
                         ) {
                             Text(
                                 text = if (transaction.requestBody.isNotBlank()) transaction.requestBody else "<Empty Body>",
@@ -211,6 +215,7 @@ fun TransactionDetailDialog(
                                 .background(CyberDarkBg)
                                 .border(1.dp, CyberBorder, RoundedCornerShape(4.dp))
                                 .padding(8.dp)
+                                .horizontalScroll(rememberScrollState())
                         ) {
                             Text(
                                 text = transaction.responseHeadersJson,
@@ -229,6 +234,7 @@ fun TransactionDetailDialog(
                                 .background(CyberDarkBg)
                                 .border(1.dp, CyberBorder, RoundedCornerShape(4.dp))
                                 .padding(8.dp)
+                                .horizontalScroll(rememberScrollState())
                         ) {
                             Text(
                                 text = if (transaction.responseBody.isNotBlank()) transaction.responseBody else "<Empty Response>",

@@ -10,6 +10,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -283,6 +284,7 @@ fun RepeaterScreen(
                                 .border(1.dp, CyberBorder, RoundedCornerShape(4.dp))
                                 .padding(6.dp)
                                 .verticalScroll(rememberScrollState())
+                                .horizontalScroll(rememberScrollState())
                         ) {
                             val displayText = activeTab.lastResponseBody ?: "No response received yet. Click 'SEND REQUEST' to execute."
                             Text(

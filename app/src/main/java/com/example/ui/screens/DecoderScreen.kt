@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -327,6 +328,7 @@ fun DecoderScreen(
                             .background(CyberDarkBg)
                             .border(1.dp, CyberBorder, RoundedCornerShape(4.dp))
                             .padding(8.dp)
+                            .horizontalScroll(rememberScrollState())
                     ) {
                         Text(jwtHeader, color = NeonAmber, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
                     }
@@ -351,6 +353,7 @@ fun DecoderScreen(
                             .background(CyberDarkBg)
                             .border(1.dp, CyberBorder, RoundedCornerShape(4.dp))
                             .padding(8.dp)
+                            .horizontalScroll(rememberScrollState())
                     ) {
                         Text(jwtPayload, color = NeonGreen, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
                     }
@@ -362,6 +365,7 @@ fun DecoderScreen(
                             .background(CyberDarkBg)
                             .border(1.dp, CyberBorder, RoundedCornerShape(4.dp))
                             .padding(8.dp)
+                            .horizontalScroll(rememberScrollState())
                     ) {
                         Text(jwtSignature, color = PurpleNeon, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
                     }
@@ -411,6 +415,7 @@ fun DecoderScreen(
                             .border(1.dp, CyberBorder, RoundedCornerShape(4.dp))
                             .padding(8.dp)
                             .verticalScroll(rememberScrollState())
+                            .horizontalScroll(rememberScrollState())
                     ) {
                         Text(
                             text = outputText.ifEmpty { "Transformed payload result will appear here..." },

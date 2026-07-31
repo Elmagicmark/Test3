@@ -187,7 +187,7 @@ fun CertificatesScreen(
                 ) {
                     Icon(Icons.Default.Warning, contentDescription = "Warning", tint = NeonAmber)
                     Text(
-                        text = "سبب ظهور خطأ NET::ERR_CERT_AUTHORITY_INVALID في متصفح Chrome",
+                        text = "حل مشكلة الشهادة NET::ERR_CERT_AUTHORITY_INVALID في متصفحي Kiwi و Firefox",
                         color = NeonAmber,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold,
@@ -195,8 +195,23 @@ fun CertificatesScreen(
                     )
                 }
 
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(CyberDarkBg)
+                        .border(1.dp, NeonGreen, RoundedCornerShape(4.dp))
+                        .padding(8.dp)
+                ) {
+                    Text(
+                        text = "✓ تم التحديث: يقوم InterceptX الآن تلقائيًا بإنشاء شهادة أمان ديناميكية (SAN Leaf Certificate) لكل موقع مثل ably.com أو google.com وتوقيعها بمفتاح Root CA الثابت والمحفوظ في التطبيق. لن تظهر أخطاء الشهادة بعد الآن في Kiwi أو Firefox عند تثبيت الشهادة.",
+                        color = NeonGreen,
+                        fontSize = 11.sp,
+                        fontFamily = FontFamily.Monospace
+                    )
+                }
+
                 Text(
-                    text = "بدايةً من نظام Android 7.0 (API 24)، يتجاهل متصفح Chrome وتطبيقات النظام الشهادات المثبتة من المستخدِم (User CAs) بشكل افتراضي لأسباب أمنية، ويعتمد فقط على شهادات النظام (System CAs).",
+                    text = "ملاحظة لمتصفح Chrome (أندرويد 7+): يتجاهل Chrome شهادات المستخدِم (User CAs) افتراضيًا ويعتمد فقط على شهادات النظام (System CAs).",
                     color = OnCyberDark,
                     fontSize = 11.sp,
                     fontFamily = FontFamily.Monospace
@@ -205,7 +220,7 @@ fun CertificatesScreen(
                 Divider(color = CyberBorder, thickness = 0.5.dp, modifier = Modifier.padding(vertical = 4.dp))
 
                 Text(
-                    text = "الحلول المتاحة للتطبيقات والمتصفحات (مثل Reqable / Burp Suite):",
+                    text = "الحلول المتاحة للمتصفحات (Kiwi / Firefox / Chrome):",
                     color = CyberCyan,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
@@ -214,8 +229,8 @@ fun CertificatesScreen(
 
                 SetupStepItem(
                     stepNumber = "A",
-                    title = "استخدام متصفح Firefox Mobile (الأسهل بدون روت)",
-                    description = "متصفح Firefox يسمح بالشهادات المحلية: افتح إعدادات Firefox -> حول Firefox -> اضغط على اللوجو 5 مرات لفتح Secret Settings -> فعّل 'Use third-party CA certificates'."
+                    title = "متصفحي Kiwi Browser و Firefox Mobile (الأفضل بدون روت)",
+                    description = "• في متصفح Kiwi: بمجرد تثبيت الشهادة في إعدادات الهاتف (شهادة CA)، سيعمل Kiwi مباشرةً.\n• في متصفح Firefox: افتح إعدادات Firefox -> حول Firefox -> اضغط على اللوجو 5 مرات لفتح Secret Settings -> فعّل 'Use third-party CA certificates'."
                 )
 
                 SetupStepItem(

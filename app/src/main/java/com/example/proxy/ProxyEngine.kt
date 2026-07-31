@@ -631,7 +631,7 @@ class ProxyEngine {
         var sslClientSocket: javax.net.ssl.SSLSocket? = null
         try {
             Log.d("ProxyEngine", "[MITM] Starting TLS interception for $targetHost")
-            val sslContext = com.example.util.CertificateManager.getMitmSslContext(targetHost)
+            val sslContext = com.example.util.CertificateManager.getMitmSslContextForHost(targetHost)
             val sslFactory = sslContext.socketFactory
             sslClientSocket = sslFactory.createSocket(clientSocket, clientSocket.inetAddress?.hostAddress, clientSocket.port, true) as javax.net.ssl.SSLSocket
             sslClientSocket.useClientMode = false

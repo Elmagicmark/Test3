@@ -3,6 +3,7 @@ package com.example.ui.screens
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -51,8 +52,9 @@ fun ProjectsScopeScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+            .verticalScroll(rememberScrollState())
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         // Target Scope Controls & Settings Card
         CyberCard(borderColor = NeonAmber) {
@@ -147,9 +149,10 @@ fun ProjectsScopeScreen(
                     OutlinedTextField(
                         value = newScopePattern,
                         onValueChange = { newScopePattern = it },
-                        placeholder = { Text("Domain e.g. example.com or target.com", fontSize = 11.sp, color = OnCyberSurfaceMuted) },
+                        placeholder = { Text("Domain e.g. example.com or target.com", fontSize = 10.5.sp, color = OnCyberSurfaceMuted) },
                         modifier = Modifier.weight(1f).testTag("scope_pattern_input"),
-                        textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = OnCyberDark)
+                        textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = OnCyberDark),
+                        singleLine = true
                     )
 
                     Button(
@@ -167,43 +170,60 @@ fun ProjectsScopeScreen(
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = CyberCyan, contentColor = Color.Black),
                         shape = RoundedCornerShape(4.dp),
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
                         modifier = Modifier
-                            .height(32.dp)
+                            .height(26.dp)
                             .testTag("add_scope_rule_button")
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Icon(Icons.Default.Add, contentDescription = "Add", modifier = Modifier.size(12.dp))
-                            Text("ADD RULE", fontSize = 9.5.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                            Icon(Icons.Default.Add, contentDescription = "Add", modifier = Modifier.size(11.dp))
+                            Text("ADD RULE", fontSize = 8.5.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
                         }
                     }
                 }
 
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
                 ) {
-                    Text("Type:", color = OnCyberSurfaceMuted, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
-                    RadioButton(
-                        selected = newScopeIsInScope,
-                        onClick = { newScopeIsInScope = true },
-                        colors = RadioButtonDefaults.colors(selectedColor = NeonGreen)
-                    )
-                    Text("In-Scope", color = NeonGreen, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                    Text("Type:", color = OnCyberSurfaceMuted, fontSize = 10.5.sp, fontFamily = FontFamily.Monospace)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.clickable { newScopeIsInScope = true }
+                    ) {
+                        RadioButton(
+                            selected = newScopeIsInScope,
+                            onClick = { newScopeIsInScope = true },
+                            colors = RadioButtonDefaults.colors(selectedColor = NeonGreen),
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("In-Scope", color = NeonGreen, fontSize = 10.5.sp, fontFamily = FontFamily.Monospace)
+                    }
 
-                    RadioButton(
-                        selected = !newScopeIsInScope,
-                        onClick = { newScopeIsInScope = false },
-                        colors = RadioButtonDefaults.colors(selectedColor = WarningCrimson)
-                    )
-                    Text("Out-of-Scope", color = WarningCrimson, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                    Spacer(modifier = Modifier.width(4.dp))
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.clickable { newScopeIsInScope = false }
+                    ) {
+                        RadioButton(
+                            selected = !newScopeIsInScope,
+                            onClick = { newScopeIsInScope = false },
+                            colors = RadioButtonDefaults.colors(selectedColor = WarningCrimson),
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Out-of-Scope", color = WarningCrimson, fontSize = 10.5.sp, fontFamily = FontFamily.Monospace)
+                    }
                 }
 
                 // Scope Rules List
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(min = 100.dp, max = 200.dp),
+                        .heightIn(min = 90.dp, max = 200.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     items(scopes) { rule ->
@@ -239,8 +259,11 @@ fun ProjectsScopeScreen(
                                 Text(rule.pattern, fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = OnCyberDark)
                             }
 
-                            IconButton(onClick = { onDeleteScope(rule.id) }) {
-                                Icon(Icons.Default.DeleteOutline, contentDescription = "Delete", tint = WarningCrimson, modifier = Modifier.size(16.dp))
+                            IconButton(
+                                onClick = { onDeleteScope(rule.id) },
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Icon(Icons.Default.DeleteOutline, contentDescription = "Delete", tint = WarningCrimson, modifier = Modifier.size(14.dp))
                             }
                         }
                     }
@@ -249,7 +272,7 @@ fun ProjectsScopeScreen(
         }
 
         // Security Projects / Workspaces Section
-        CyberCard(borderColor = NeonGreen, modifier = Modifier.weight(1f)) {
+        CyberCard(borderColor = NeonGreen) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
                     text = "SECURITY WORKSPACE PROJECTS",
@@ -263,16 +286,18 @@ fun ProjectsScopeScreen(
                     OutlinedTextField(
                         value = newProjectName,
                         onValueChange = { newProjectName = it },
-                        placeholder = { Text("Project Name", fontSize = 11.sp) },
+                        placeholder = { Text("Project Name", fontSize = 10.5.sp) },
                         modifier = Modifier.weight(1f),
-                        textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = OnCyberDark)
+                        textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = OnCyberDark),
+                        singleLine = true
                     )
                     OutlinedTextField(
                         value = newProjectDesc,
                         onValueChange = { newProjectDesc = it },
-                        placeholder = { Text("Description", fontSize = 11.sp) },
+                        placeholder = { Text("Description", fontSize = 10.5.sp) },
                         modifier = Modifier.weight(1f),
-                        textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = OnCyberDark)
+                        textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = OnCyberDark),
+                        singleLine = true
                     )
                     Button(
                         onClick = {
@@ -285,21 +310,23 @@ fun ProjectsScopeScreen(
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = NeonGreen, contentColor = Color.Black),
                         shape = RoundedCornerShape(4.dp),
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
                         modifier = Modifier
-                            .height(32.dp)
+                            .height(26.dp)
                             .testTag("create_project_button")
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Icon(Icons.Default.Add, contentDescription = "Create", modifier = Modifier.size(12.dp))
-                            Text("CREATE", fontSize = 9.5.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                            Icon(Icons.Default.Add, contentDescription = "Create", modifier = Modifier.size(11.dp))
+                            Text("CREATE", fontSize = 8.5.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
                         }
                     }
                 }
 
                 LazyColumn(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 90.dp, max = 200.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     items(projects) { proj ->
                         Row(
@@ -319,8 +346,11 @@ fun ProjectsScopeScreen(
                                 Text(proj.name, color = OnCyberDark, fontSize = 13.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
                                 Text(proj.description, color = OnCyberSurfaceMuted, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
                             }
-                            IconButton(onClick = { onDeleteProject(proj.id) }) {
-                                Icon(Icons.Default.DeleteOutline, contentDescription = "Delete", tint = WarningCrimson)
+                            IconButton(
+                                onClick = { onDeleteProject(proj.id) },
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Icon(Icons.Default.DeleteOutline, contentDescription = "Delete", tint = WarningCrimson, modifier = Modifier.size(14.dp))
                             }
                         }
                     }

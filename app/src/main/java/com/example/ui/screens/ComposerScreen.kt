@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -74,7 +75,7 @@ fun ComposerScreen(
                         Text(
                             text = "RAW HTTP PACKET BUILDER",
                             color = OnCyberDark,
-                            fontSize = 13.sp,
+                            fontSize = 11.5.sp,
                             fontWeight = FontWeight.Bold,
                             fontFamily = FontFamily.Monospace
                         )
@@ -126,12 +127,18 @@ fun ComposerScreen(
                         colors = ButtonDefaults.buttonColors(containerColor = PurpleNeon, contentColor = Color.White),
                         shape = RoundedCornerShape(4.dp),
                         enabled = !isExecuting,
-                        modifier = Modifier.testTag("execute_raw_packet_button")
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                        modifier = Modifier
+                            .height(32.dp)
+                            .testTag("execute_raw_packet_button")
                     ) {
                         if (isExecuting) {
-                            CircularProgressIndicator(modifier = Modifier.size(14.dp), color = Color.White, strokeWidth = 2.dp)
+                            CircularProgressIndicator(modifier = Modifier.size(12.dp), color = Color.White, strokeWidth = 1.5.dp)
                         } else {
-                            Text("EXECUTE PACKET", fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Icon(Icons.Default.Send, contentDescription = "Execute", modifier = Modifier.size(12.dp))
+                                Text("EXECUTE", fontSize = 9.5.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                            }
                         }
                     }
                 }
@@ -139,7 +146,7 @@ fun ComposerScreen(
                 Text(
                     text = "Craft low-level raw HTTP request packets line by line (Method, Headers, and Payload):",
                     color = OnCyberSurfaceMuted,
-                    fontSize = 11.sp,
+                    fontSize = 10.sp,
                     fontFamily = FontFamily.Monospace
                 )
 
@@ -148,10 +155,10 @@ fun ComposerScreen(
                     onValueChange = { rawText = it },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(220.dp),
+                        .height(160.dp),
                     textStyle = LocalTextStyle.current.copy(
                         fontFamily = FontFamily.Monospace,
-                        fontSize = 11.sp,
+                        fontSize = 10.5.sp,
                         color = NeonGreen
                     ),
                     colors = OutlinedTextFieldDefaults.colors(
@@ -192,16 +199,17 @@ fun ComposerScreen(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(min = 120.dp, max = 240.dp)
+                        .heightIn(min = 100.dp, max = 220.dp)
                         .background(CyberDarkBg)
                         .border(1.dp, CyberBorder, RoundedCornerShape(4.dp))
                         .padding(8.dp)
                         .verticalScroll(rememberScrollState())
+                        .horizontalScroll(rememberScrollState())
                 ) {
                     Text(
                         text = lastResponse ?: "No raw packet execution response.",
                         color = if (lastResponse != null) OnCyberDark else OnCyberSurfaceMuted,
-                        fontSize = 11.sp,
+                        fontSize = 10.5.sp,
                         fontFamily = FontFamily.Monospace
                     )
                 }

@@ -167,9 +167,15 @@ fun ProjectsScopeScreen(
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = CyberCyan, contentColor = Color.Black),
                         shape = RoundedCornerShape(4.dp),
-                        modifier = Modifier.testTag("add_scope_rule_button")
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                        modifier = Modifier
+                            .height(32.dp)
+                            .testTag("add_scope_rule_button")
                     ) {
-                        Text("ADD RULE", fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Icon(Icons.Default.Add, contentDescription = "Add", modifier = Modifier.size(12.dp))
+                            Text("ADD RULE", fontSize = 9.5.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                        }
                     }
                 }
 
@@ -197,7 +203,7 @@ fun ProjectsScopeScreen(
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(110.dp),
+                        .heightIn(min = 100.dp, max = 200.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     items(scopes) { rule ->
@@ -210,7 +216,13 @@ fun ProjectsScopeScreen(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .horizontalScroll(rememberScrollState())
+                            ) {
                                 Box(
                                     modifier = Modifier
                                         .background(if (rule.isInScope) Color(0xFF003814) else Color(0xFF4A0E17))
@@ -273,9 +285,15 @@ fun ProjectsScopeScreen(
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = NeonGreen, contentColor = Color.Black),
                         shape = RoundedCornerShape(4.dp),
-                        modifier = Modifier.testTag("create_project_button")
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                        modifier = Modifier
+                            .height(32.dp)
+                            .testTag("create_project_button")
                     ) {
-                        Text("CREATE", fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Icon(Icons.Default.Add, contentDescription = "Create", modifier = Modifier.size(12.dp))
+                            Text("CREATE", fontSize = 9.5.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                        }
                     }
                 }
 
@@ -293,7 +311,11 @@ fun ProjectsScopeScreen(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Column(modifier = Modifier.weight(1f)) {
+                            Column(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .horizontalScroll(rememberScrollState())
+                            ) {
                                 Text(proj.name, color = OnCyberDark, fontSize = 13.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
                                 Text(proj.description, color = OnCyberSurfaceMuted, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
                             }

@@ -3,174 +3,72 @@ package com.example.proxy
 import android.util.Log
 import com.example.data.local.HttpTransactionEntity
 import com.example.data.local.InterceptedRequestEntity
+import com.example.data.local.TargetScopeEntity
+import com.example.data.model.InterceptAction
 import com.example.data.model.ProxySettings
 import kotlinx.coroutines.*
-import okhttp3.*
-import okhttp3.MediaType.Companion.toMediaTypeOrNull
-import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.Response
 import java.io.*
-import java.net.*
+import java.net.InetSocketAddress
+import java.net.ServerSocket
+import java.net.Socket
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
-import javax.net.ssl.SSLContext
-import javax.net.ssl.TrustManager
-import javax.net.ssl.X509TrustManager
-
-sealed class InterceptAction {
-    data class Forward(
-        val method: String,
-        val url: String,
-        val headersMap: Map<String, String>,
-        val body: String
-    ) : InterceptAction()
-
-    data class ForwardDirectResponse(
-        val statusCode: Int,
-        val headersMap: Map<String, String>,
-        val body: String
-    ) : InterceptAction()
-
-    object Drop : InterceptAction()
-}
 
 class ProxyEngine {
 
     private var serverSocket: ServerSocket? = null
-    private var proxyJob: Job? = null
     private val executor = Executors.newCachedThreadPool()
-    @Volatile private var isRunning = false
-    @Volatile private var currentSettings: ProxySettings = ProxySettings()
-    @Volatile private var activeScopes: List<com.example.data.local.TargetScopeEntity> = emptyList()
+    private var isRunning = false
+    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
-    fun updateSettings(newSettings: ProxySettings) {
-        currentSettings = newSettings
-        Log.d("ProxyEngine", "Settings updated live: isInterceptEnabled=${newSettings.isInterceptEnabled}, enforceScopeOnly=${newSettings.enforceScopeOnly}")
+    @Volatile
+    var proxySettings: ProxySettings = ProxySettings()
+
+    @Volatile
+    private var activeScopes: List<TargetScopeEntity> = emptyList()
+
+    @Volatile
+    private var bypassDomains: List<String> = emptyList()
+
+    fun updateProxySettings(settings: ProxySettings) {
+        proxySettings = settings
+        Log.d("ProxyEngine", "Proxy settings updated: $settings")
     }
 
-    fun updateActiveScopes(scopes: List<com.example.data.local.TargetScopeEntity>) {
+    fun updateActiveScopes(scopes: List<TargetScopeEntity>) {
         activeScopes = scopes
-        Log.d("ProxyEngine", "Active scope rules updated: count=${scopes.size}")
+        Log.d("ProxyEngine", "Active scopes updated: count=${scopes.size}")
     }
 
-    fun isUrlInScope(url: String, settings: ProxySettings, scopes: List<com.example.data.local.TargetScopeEntity>): Boolean {
-        val enabledScopes = scopes.filter { it.isEnabled }
-        if (enabledScopes.isEmpty()) return true
-
-        // 1. Check if explicitly excluded
-        val isExcluded = enabledScopes.any { scope ->
-            !scope.isInScope && matchesDomainPattern(url, scope.pattern, settings.includeSubdomains)
-        }
-        if (isExcluded) return false
-
-        // 2. Check if matches any in-scope rule
-        val inScopeRules = enabledScopes.filter { it.isInScope }
-        if (inScopeRules.isEmpty()) return true
-
-        return inScopeRules.any { scope ->
-            matchesDomainPattern(url, scope.pattern, settings.includeSubdomains)
-        }
-    }
-
-    private fun cleanDomainPattern(pattern: String): String {
-        var s = pattern.trim().lowercase()
-        s = s.replace("http://", "").replace("https://", "")
-        s = s.replace(".*", "").replace("\\.", ".").replace("*", "")
-        s = s.replace("\\", "").replace("\"", "").replace("'", "")
-        val slashIdx = s.indexOf('/')
-        if (slashIdx != -1) s = s.substring(0, slashIdx)
-        val portIdx = s.indexOf(':')
-        if (portIdx != -1) s = s.substring(0, portIdx)
-        return s.trim().trim('.', ' ')
-    }
-
-    private fun extractHost(url: String): String {
-        if (url.isBlank()) return ""
-        var clean = url.trim().lowercase()
-        clean = clean.replace("http://", "").replace("https://", "")
-        val slashIdx = clean.indexOf('/')
-        if (slashIdx != -1) clean = clean.substring(0, slashIdx)
-        val portIdx = clean.indexOf(':')
-        if (portIdx != -1) clean = clean.substring(0, portIdx)
-        return clean.trim().trim('.', ' ')
-    }
-
-    fun matchesDomainPattern(urlOrHost: String, pattern: String, includeSubdomains: Boolean = true): Boolean {
-        val cleanPattern = cleanDomainPattern(pattern)
-        if (cleanPattern.isEmpty()) return false
-
-        val host = extractHost(urlOrHost)
-        val urlLower = urlOrHost.trim().lowercase()
-
-        // 1. Exact host match
-        if (host == cleanPattern) return true
-
-        // 2. Subdomain match (e.g. api.example.com matches example.com)
-        if (includeSubdomains && host.endsWith(".$cleanPattern")) return true
-
-        // 3. Host contains domain substring
-        if (host.contains(cleanPattern)) return true
-
-        // 4. Raw URL contains domain substring
-        if (urlLower.contains(cleanPattern)) return true
-
-        return false
+    fun updateBypassDomains(domains: List<String>) {
+        bypassDomains = domains
+        Log.d("ProxyEngine", "Bypass domains updated: count=${domains.size}")
     }
 
     fun startProxy(
-        settings: ProxySettings,
-        scope: CoroutineScope,
         onTransactionCaptured: (HttpTransactionEntity) -> Unit,
         onInterceptCaptured: (InterceptedRequestEntity, onAction: (InterceptAction) -> Unit) -> Unit,
         onStatsUpdated: (bytes: Long, activeConnIncrement: Int) -> Unit
     ) {
-        if (isRunning) stopProxy()
-
-        currentSettings = settings
+        if (isRunning) return
         isRunning = true
-        proxyJob = scope.launch(Dispatchers.IO) {
+
+        executor.execute {
             try {
-                val bindAddr = if (settings.host == "0.0.0.0" || settings.host == "127.0.0.1" || settings.host.isBlank() || settings.host.contains("0.0.0.0")) {
-                    InetAddress.getByAddress(byteArrayOf(0, 0, 0, 0))
-                } else {
-                    try {
-                        InetAddress.getByName(settings.host)
-                    } catch (_: Exception) {
-                        InetAddress.getByAddress(byteArrayOf(0, 0, 0, 0))
-                    }
-                }
+                serverSocket = ServerSocket(proxySettings.port)
+                Log.d("ProxyEngine", "Proxy started on port ${proxySettings.port}")
 
-                val socket = ServerSocket()
-                socket.reuseAddress = true
-                socket.bind(InetSocketAddress(bindAddr, settings.port), 100)
-                serverSocket = socket
-                Log.d("ProxyEngine", "Proxy Server started listening on 0.0.0.0 (All interfaces):${settings.port}")
-
-                val httpClient = buildOkHttpClient(settings)
-
-                while (isRunning && !serverSocket!!.isClosed) {
-                    try {
-                        val clientSocket = serverSocket!!.accept()
-                        clientSocket.soTimeout = 30000
-                        onStatsUpdated(0L, 1)
-                        executor.execute {
-                            try {
-                                handleClientSocket(clientSocket, httpClient, onTransactionCaptured, onInterceptCaptured, onStatsUpdated)
-                            } catch (e: Exception) {
-                                Log.e("ProxyEngine", "Client handling error: ${e.message}")
-                            } finally {
-                                try { clientSocket.close() } catch (_: Exception) {}
-                                onStatsUpdated(0L, -1)
-                            }
-                        }
-                    } catch (e: Exception) {
-                        if (isRunning) {
-                            Log.e("ProxyEngine", "Accept error: ${e.message}")
-                        }
+                while (isRunning) {
+                    val clientSocket = serverSocket?.accept() ?: break
+                    executor.execute {
+                        handleClient(clientSocket, onTransactionCaptured, onInterceptCaptured, onStatsUpdated)
                     }
                 }
             } catch (e: Exception) {
-                Log.e("ProxyEngine", "Proxy Server crash: ${e.message}")
-                isRunning = false
+                Log.e("ProxyEngine", "Proxy error: ${e.message}")
             }
         }
     }
@@ -179,139 +77,118 @@ class ProxyEngine {
         isRunning = false
         try {
             serverSocket?.close()
-            serverSocket = null
-        } catch (e: Exception) {
-            Log.e("ProxyEngine", "Error closing server socket: ${e.message}")
-        }
-        proxyJob?.cancel()
-        proxyJob = null
+        } catch (_: Exception) {}
+        executor.shutdown()
+        scope.cancel()
+        Log.d("ProxyEngine", "Proxy stopped")
     }
 
-    fun isEngineRunning(): Boolean = isRunning
-
-    private fun buildOkHttpClient(settings: ProxySettings): OkHttpClient {
-        val builder = OkHttpClient.Builder()
-            .connectTimeout(15, TimeUnit.SECONDS)
-            .readTimeout(20, TimeUnit.SECONDS)
-            .writeTimeout(20, TimeUnit.SECONDS)
-            .followRedirects(false)
-            .followSslRedirects(false)
-
-        if (settings.http2Enabled) {
-            builder.protocols(listOf(Protocol.HTTP_2, Protocol.HTTP_1_1))
-        } else {
-            builder.protocols(listOf(Protocol.HTTP_1_1))
-        }
-
-        // Configure Upstream External Proxy if enabled
-        if (settings.upstreamProxyEnabled && settings.upstreamProxyHost.isNotBlank()) {
-            val upstreamProxy = java.net.Proxy(
-                java.net.Proxy.Type.HTTP,
-                InetSocketAddress(settings.upstreamProxyHost, settings.upstreamProxyPort)
-            )
-            builder.proxy(upstreamProxy)
-            Log.d("ProxyEngine", "Configured Upstream Proxy -> ${settings.upstreamProxyHost}:${settings.upstreamProxyPort}")
-        }
-
-        if (settings.sslBypassEnabled) {
-            try {
-                val trustAllCerts = arrayOf<TrustManager>(object : X509TrustManager {
-                    override fun checkClientTrusted(chain: Array<out java.security.cert.X509Certificate>?, authType: String?) {}
-                    override fun checkServerTrusted(chain: Array<out java.security.cert.X509Certificate>?, authType: String?) {}
-                    override fun getAcceptedIssuers(): Array<java.security.cert.X509Certificate> = arrayOf()
-                })
-                val sslContext = SSLContext.getInstance("SSL")
-                sslContext.init(null, trustAllCerts, java.security.SecureRandom())
-                builder.sslSocketFactory(sslContext.socketFactory, trustAllCerts[0] as X509TrustManager)
-                builder.hostnameVerifier { _, _ -> true }
-            } catch (e: Exception) {
-                Log.e("ProxyEngine", "SSL Bypass config error: ${e.message}")
-            }
-        }
-
-        return builder.build()
-    }
-
-    private fun readHeaderLine(input: InputStream): String? {
-        val bos = ByteArrayOutputStream()
-        while (true) {
-            val b = input.read()
-            if (b == -1) {
-                if (bos.size() == 0) return null
-                break
-            }
-            if (b == '\n'.code) {
-                val bytes = bos.toByteArray()
-                if (bytes.isNotEmpty() && bytes.last() == '\r'.code.toByte()) {
-                    return String(bytes, 0, bytes.size - 1, Charsets.UTF_8)
-                }
-                return String(bytes, Charsets.UTF_8)
-            }
-            bos.write(b)
-        }
-        return String(bos.toByteArray(), Charsets.UTF_8)
-    }
-
-    private fun handleClientSocket(
+    private fun handleClient(
         clientSocket: Socket,
+        onTransactionCaptured: (HttpTransactionEntity) -> Unit,
+        onInterceptCaptured: (InterceptedRequestEntity, onAction: (InterceptAction) -> Unit) -> Unit,
+        onStatsUpdated: (bytes: Long, activeConnIncrement: Int) -> Unit
+    ) {
+        try {
+            clientSocket.soTimeout = 30000
+            val inputStream = clientSocket.getInputStream()
+            val outputStream = clientSocket.getOutputStream()
+            val reader = BufferedReader(InputStreamReader(inputStream))
+
+            val requestLine = reader.readLine() ?: return
+            if (requestLine.isBlank()) return
+
+            val parts = requestLine.split(" ")
+            if (parts.size < 2) return
+
+            val method = parts[0].uppercase()
+            val path = parts[1]
+            val version = if (parts.size > 2) parts[2] else "HTTP/1.1"
+
+            val headersMap = mutableMapOf<String, String>()
+            var contentLength = 0
+            while (true) {
+                val line = reader.readLine() ?: break
+                if (line.isBlank()) break
+                val colonIdx = line.indexOf(":")
+                if (colonIdx > 0) {
+                    val k = line.substring(0, colonIdx).trim()
+                    val v = line.substring(colonIdx + 1).trim()
+                    headersMap[k] = v
+                    if (k.equals("Content-Length", ignoreCase = true)) {
+                        contentLength = v.toIntOrNull() ?: 0
+                    }
+                }
+            }
+
+            var requestBodyString = ""
+            if (contentLength > 0) {
+                val bodyBytes = ByteArray(contentLength)
+                var totalRead = 0
+                while (totalRead < contentLength) {
+                    val read = inputStream.read(bodyBytes, totalRead, contentLength - totalRead)
+                    if (read <= 0) break
+                    totalRead += read
+                }
+                requestBodyString = String(bodyBytes, 0, totalRead, Charsets.UTF_8)
+            }
+
+            val httpClient = buildOkHttpClient()
+
+            if (method == "CONNECT") {
+                handleConnectTunnel(
+                    hostPort = path,
+                    clientSocket = clientSocket,
+                    inputStream = inputStream,
+                    outputStream = outputStream,
+                    httpClient = httpClient,
+                    onTransactionCaptured = onTransactionCaptured,
+                    onInterceptCaptured = onInterceptCaptured,
+                    onStatsUpdated = onStatsUpdated
+                )
+            } else {
+                handleHttpRequest(
+                    method = method,
+                    path = path,
+                    version = version,
+                    headersMap = headersMap,
+                    requestBodyString = requestBodyString,
+                    outputStream = outputStream,
+                    httpClient = httpClient,
+                    onTransactionCaptured = onTransactionCaptured,
+                    onInterceptCaptured = onInterceptCaptured,
+                    onStatsUpdated = onStatsUpdated
+                )
+            }
+        } catch (e: Exception) {
+            Log.e("ProxyEngine", "Client handling error: ${e.message}")
+        } finally {
+            try { clientSocket.close() } catch (_: Exception) {}
+        }
+    }
+
+    private fun handleHttpRequest(
+        method: String,
+        path: String,
+        version: String,
+        headersMap: MutableMap<String, String>,
+        requestBodyString: String,
+        outputStream: OutputStream,
         httpClient: OkHttpClient,
         onTransactionCaptured: (HttpTransactionEntity) -> Unit,
         onInterceptCaptured: (InterceptedRequestEntity, onAction: (InterceptAction) -> Unit) -> Unit,
         onStatsUpdated: (bytes: Long, activeConnIncrement: Int) -> Unit
     ) {
-        val inputStream = clientSocket.getInputStream()
-        val outputStream = clientSocket.getOutputStream()
-
-        val requestLine = readHeaderLine(inputStream) ?: return
-        Log.d("ProxyEngine", "Incoming request: $requestLine")
-
-        val parts = requestLine.split(" ")
-        if (parts.size < 2) return
-
-        val method = parts[0].uppercase()
-        val rawUrl = parts[1]
-
-        val headersMap = mutableMapOf<String, String>()
-        var contentLength = 0
-        while (true) {
-            val line = readHeaderLine(inputStream) ?: break
-            if (line.isBlank()) break
-            val colonIdx = line.indexOf(":")
-            if (colonIdx > 0) {
-                val k = line.substring(0, colonIdx).trim()
-                val v = line.substring(colonIdx + 1).trim()
-                headersMap[k] = v
-                if (k.equals("Content-Length", ignoreCase = true)) {
-                    contentLength = v.toIntOrNull() ?: 0
-                }
-            }
-        }
-
-        // Handle HTTPS CONNECT tunnel
-        if (method == "CONNECT") {
-            handleConnectTunnel(rawUrl, clientSocket, inputStream, outputStream, httpClient, onTransactionCaptured, onInterceptCaptured, onStatsUpdated)
-            return
-        }
-
-        // Handle Standard HTTP Proxy request
-        var requestBodyString = ""
-        if (contentLength > 0) {
-            val bodyBytes = ByteArray(contentLength)
-            var totalRead = 0
-            while (totalRead < contentLength) {
-                val read = inputStream.read(bodyBytes, totalRead, contentLength - totalRead)
-                if (read <= 0) break
-                totalRead += read
-            }
-            requestBodyString = String(bodyBytes, 0, totalRead, Charsets.UTF_8)
-        }
-
-        val fullUrl = if (rawUrl.startsWith("http://") || rawUrl.startsWith("https://")) {
-            rawUrl
+        val host = headersMap["Host"] ?: "unknown"
+        val fullUrl = if (path.startsWith("http://") || path.startsWith("https://")) {
+            path
         } else {
-            val hostHeader = headersMap["Host"] ?: "127.0.0.1"
-            "http://$hostHeader$rawUrl"
+            "http://$host$path"
         }
+
+        val shouldIntercept = proxySettings.isInterceptEnabled
+            && proxySettings.shouldInterceptMethod(method)
+            && (!proxySettings.enforceScopeOnly || isUrlInScope(fullUrl))
 
         processHttpTransaction(
             method = method,
@@ -320,292 +197,11 @@ class ProxyEngine {
             requestBodyString = requestBodyString,
             outputStream = outputStream,
             httpClient = httpClient,
+            shouldIntercept = shouldIntercept,
             onTransactionCaptured = onTransactionCaptured,
             onInterceptCaptured = onInterceptCaptured,
             onStatsUpdated = onStatsUpdated
         )
-    }
-
-    private fun processHttpTransaction(
-        method: String,
-        fullUrl: String,
-        headersMap: Map<String, String>,
-        requestBodyString: String,
-        outputStream: OutputStream,
-        httpClient: OkHttpClient,
-        onTransactionCaptured: (HttpTransactionEntity) -> Unit,
-        onInterceptCaptured: (InterceptedRequestEntity, onAction: (InterceptAction) -> Unit) -> Unit,
-        onStatsUpdated: (bytes: Long, activeConnIncrement: Int) -> Unit
-    ) {
-        val headersJson = "{" + headersMap.entries.joinToString(",") { "\"${it.key}\":\"${it.value.replace("\"", "\\\"")}\"" } + "}"
-
-        var execMethod = method
-        var execUrl = fullUrl
-        var execHeadersMap = headersMap.toMap()
-        var execBody = requestBodyString
-
-        val inScope = isUrlInScope(fullUrl, currentSettings, activeScopes)
-        val effectiveInScope = if (currentSettings.enforceScopeOnly) inScope else true
-
-        val shouldInterceptReq = effectiveInScope && currentSettings.isInterceptEnabled && currentSettings.interceptRequests && currentSettings.shouldInterceptMethod(method)
-
-        if (shouldInterceptReq) {
-            val latch = java.util.concurrent.CountDownLatch(1)
-            var actionResult: InterceptAction = InterceptAction.Forward(method, fullUrl, headersMap, requestBodyString)
-
-            val interceptEntity = InterceptedRequestEntity(
-                method = method,
-                url = fullUrl,
-                headersJson = headersJson,
-                body = requestBodyString
-            )
-
-            onInterceptCaptured(interceptEntity) { action ->
-                actionResult = action
-                latch.countDown()
-            }
-
-            try {
-                latch.await(120, TimeUnit.SECONDS)
-            } catch (e: Exception) {
-                Log.e("ProxyEngine", "Intercept wait timeout: ${e.message}")
-            }
-
-            when (val res = actionResult) {
-                is InterceptAction.Drop -> {
-                    val dropResp = "HTTP/1.1 502 Bad Gateway\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\n[InterceptX] Request dropped by user in Intercept mode."
-                    outputStream.write(dropResp.toByteArray(Charsets.UTF_8))
-                    outputStream.flush()
-
-                    val tx = HttpTransactionEntity(
-                        url = fullUrl,
-                        method = method,
-                        statusCode = 502,
-                        requestHeadersJson = headersJson,
-                        requestBody = requestBodyString,
-                        responseHeadersJson = "{\"Content-Type\":\"text/plain\"}",
-                        responseBody = "[InterceptX] Request dropped by user in Intercept mode.",
-                        responseTimeMs = 0L,
-                        bytesTransferred = dropResp.length.toLong(),
-                        isIntercepted = true
-                    )
-                    onTransactionCaptured(tx)
-                    return
-                }
-                is InterceptAction.ForwardDirectResponse -> {
-                    val statusText = getStatusMessage(res.statusCode)
-                    val respBodyBytes = res.body.toByteArray(Charsets.UTF_8)
-                    val finalHeaders = res.headersMap.toMutableMap()
-                    finalHeaders["Content-Length"] = respBodyBytes.size.toString()
-                    val headerLines = finalHeaders.entries.joinToString("\r\n") { "${it.key}: ${it.value}" }
-                    val rawResponse = "HTTP/1.1 ${res.statusCode} $statusText\r\n$headerLines\r\n\r\n"
-                    val headerBytes = rawResponse.toByteArray(Charsets.UTF_8)
-
-                    outputStream.write(headerBytes)
-                    if (respBodyBytes.isNotEmpty()) {
-                        outputStream.write(respBodyBytes)
-                    }
-                    outputStream.flush()
-
-                    val tx = HttpTransactionEntity(
-                        url = fullUrl,
-                        method = method,
-                        statusCode = res.statusCode,
-                        requestHeadersJson = headersJson,
-                        requestBody = requestBodyString,
-                        responseHeadersJson = "{" + res.headersMap.entries.joinToString(",") { "\"${it.key}\":\"${it.value.replace("\"", "\\\"")}\"" } + "}",
-                        responseBody = res.body,
-                        responseTimeMs = 12L,
-                        bytesTransferred = (headerBytes.size + respBodyBytes.size).toLong(),
-                        isIntercepted = true
-                    )
-                    onTransactionCaptured(tx)
-                    return
-                }
-                is InterceptAction.Forward -> {
-                    execMethod = res.method
-                    execUrl = res.url
-                    execHeadersMap = res.headersMap
-                    execBody = res.body
-                }
-            }
-        }
-
-        val startTime = System.currentTimeMillis()
-        var statusCode = 500
-        var responseBodyString = ""
-        var responseHeadersJson = "{}"
-        var byteCount = 0L
-
-        try {
-            val reqBuilder = Request.Builder().url(execUrl)
-            execHeadersMap.forEach { (k, v) ->
-                if (!k.equals("Host", ignoreCase = true) && 
-                    !k.equals("Proxy-Connection", ignoreCase = true) &&
-                    !k.equals("Accept-Encoding", ignoreCase = true)) {
-                    reqBuilder.addHeader(k, v)
-                }
-            }
-
-            if (execMethod in listOf("POST", "PUT", "PATCH")) {
-                val mediaType = execHeadersMap["Content-Type"]?.toMediaTypeOrNull() ?: "application/octet-stream".toMediaTypeOrNull()
-                reqBuilder.method(execMethod, execBody.toRequestBody(mediaType))
-            } else if (execMethod == "DELETE") {
-                if (execBody.isNotBlank()) {
-                    val mediaType = execHeadersMap["Content-Type"]?.toMediaTypeOrNull()
-                    reqBuilder.method("DELETE", execBody.toRequestBody(mediaType))
-                } else {
-                    reqBuilder.delete()
-                }
-            } else {
-                reqBuilder.method(execMethod, null)
-            }
-
-            val okResponse = httpClient.newCall(reqBuilder.build()).execute()
-            statusCode = okResponse.code
-
-            var rawRespBytes = okResponse.body?.bytes() ?: byteArrayOf()
-            val contentEncoding = okResponse.header("Content-Encoding")
-            if (contentEncoding?.contains("gzip", ignoreCase = true) == true && rawRespBytes.isNotEmpty()) {
-                try {
-                    rawRespBytes = java.util.zip.GZIPInputStream(java.io.ByteArrayInputStream(rawRespBytes)).readBytes()
-                } catch (e: Exception) {
-                    Log.w("ProxyEngine", "Failed GZIP decompress: ${e.message}")
-                }
-            } else if (contentEncoding?.contains("deflate", ignoreCase = true) == true && rawRespBytes.isNotEmpty()) {
-                try {
-                    rawRespBytes = java.util.zip.InflaterInputStream(java.io.ByteArrayInputStream(rawRespBytes)).readBytes()
-                } catch (e: Exception) {
-                    Log.w("ProxyEngine", "Failed Deflate decompress: ${e.message}")
-                }
-            }
-
-            responseBodyString = String(rawRespBytes, Charsets.UTF_8)
-
-            val respHeaderMap = mutableMapOf<String, String>()
-            respHeaderMap["X-Protocol"] = okResponse.protocol.toString()
-            okResponse.headers.forEach { pair ->
-                if (!pair.first.equals("Content-Encoding", ignoreCase = true)) {
-                    respHeaderMap[pair.first] = pair.second
-                }
-            }
-            responseHeadersJson = "{" + respHeaderMap.entries.joinToString(",") { "\"${it.key}\":\"${it.value.replace("\"", "\\\"")}\"" } + "}"
-
-            var execStatusCode = statusCode
-            var execRespHeaderMap = respHeaderMap.toMap()
-            var execResponseBodyString = responseBodyString
-
-            val shouldInterceptResp = effectiveInScope && currentSettings.isInterceptEnabled && currentSettings.interceptResponses && currentSettings.shouldInterceptMethod(execMethod)
-
-            if (shouldInterceptResp) {
-                val respLatch = java.util.concurrent.CountDownLatch(1)
-                var respActionResult: InterceptAction = InterceptAction.Forward(statusCode.toString(), execUrl, respHeaderMap, responseBodyString)
-
-                val responseInterceptEntity = InterceptedRequestEntity(
-                    method = statusCode.toString(),
-                    url = execUrl,
-                    headersJson = responseHeadersJson,
-                    body = responseBodyString,
-                    isResponse = true,
-                    statusCode = statusCode
-                )
-
-                onInterceptCaptured(responseInterceptEntity) { action ->
-                    respActionResult = action
-                    respLatch.countDown()
-                }
-
-                try {
-                    respLatch.await(60, TimeUnit.SECONDS)
-                } catch (e: Exception) {
-                    Log.e("ProxyEngine", "Response Intercept wait timeout: ${e.message}")
-                }
-
-                when (val res = respActionResult) {
-                    is InterceptAction.Drop -> {
-                        val dropResp = "HTTP/1.1 502 Bad Gateway\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\n[InterceptX] Response dropped by user in Intercept mode."
-                        outputStream.write(dropResp.toByteArray(Charsets.UTF_8))
-                        outputStream.flush()
-
-                        val execHeadersJson = "{" + execHeadersMap.entries.joinToString(",") { "\"${it.key}\":\"${it.value.replace("\"", "\\\"")}\"" } + "}"
-                        val tx = HttpTransactionEntity(
-                            url = execUrl,
-                            method = execMethod,
-                            statusCode = 502,
-                            requestHeadersJson = execHeadersJson,
-                            requestBody = execBody,
-                            responseHeadersJson = "{\"Content-Type\":\"text/plain\"}",
-                            responseBody = "[InterceptX] Response dropped by user in Intercept mode.",
-                            responseTimeMs = (System.currentTimeMillis() - startTime),
-                            bytesTransferred = dropResp.length.toLong(),
-                            isIntercepted = true
-                        )
-                        onTransactionCaptured(tx)
-                        return
-                    }
-                    is InterceptAction.ForwardDirectResponse -> {
-                        execStatusCode = res.statusCode
-                        execRespHeaderMap = res.headersMap
-                        execResponseBodyString = res.body
-                    }
-                    is InterceptAction.Forward -> {
-                        execStatusCode = res.method.toIntOrNull() ?: statusCode
-                        execRespHeaderMap = res.headersMap
-                        execResponseBodyString = res.body
-                    }
-                }
-            }
-
-            // Send HTTP response back to proxy client
-            val statusText = getStatusMessage(execStatusCode)
-            val respBodyBytes = execResponseBodyString.toByteArray(Charsets.UTF_8)
-
-            val finalHeaders = execRespHeaderMap.toMutableMap()
-            finalHeaders["Content-Length"] = respBodyBytes.size.toString()
-            finalHeaders.keys.removeAll { it.equals("Transfer-Encoding", ignoreCase = true) }
-
-            val headerLines = finalHeaders.entries.joinToString("\r\n") { "${it.key}: ${it.value}" }
-            val rawResponse = "HTTP/1.1 $execStatusCode $statusText\r\n$headerLines\r\n\r\n"
-
-            val headerBytes = rawResponse.toByteArray(Charsets.UTF_8)
-            outputStream.write(headerBytes)
-            if (respBodyBytes.isNotEmpty()) {
-                outputStream.write(respBodyBytes)
-            }
-            outputStream.flush()
-
-            byteCount = headerBytes.size.toLong() + respBodyBytes.size.toLong() + execBody.toByteArray().size
-            onStatsUpdated(byteCount, 0)
-
-        } catch (e: Exception) {
-            Log.e("ProxyEngine", "Proxy execution error for $execUrl: ${e.message}")
-            val errorResp = "HTTP/1.1 502 Bad Gateway\r\nContent-Type: text/plain\r\n\r\nProxy Error: ${e.localizedMessage}"
-            outputStream.write(errorResp.toByteArray())
-            outputStream.flush()
-            responseBodyString = "Proxy Error: ${e.localizedMessage}"
-            byteCount = errorResp.length.toLong()
-        }
-
-        val duration = (System.currentTimeMillis() - startTime).toInt()
-
-        val execHeadersJson = "{" + execHeadersMap.entries.joinToString(",") { "\"${it.key}\":\"${it.value.replace("\"", "\\\"")}\"" } + "}"
-
-        if (inScope || !currentSettings.enforceScopeOnly) {
-            val tx = HttpTransactionEntity(
-                url = execUrl,
-                method = execMethod,
-                statusCode = statusCode,
-                requestHeadersJson = execHeadersJson,
-                requestBody = execBody,
-                responseHeadersJson = responseHeadersJson,
-                responseBody = responseBodyString,
-                responseTimeMs = duration.toLong(),
-                bytesTransferred = byteCount,
-                isIntercepted = currentSettings.isInterceptEnabled
-            )
-
-            onTransactionCaptured(tx)
-        }
     }
 
     private fun handleConnectTunnel(
@@ -624,6 +220,36 @@ class ProxyEngine {
 
         Log.d("ProxyEngine", "[PROXY] CONNECT $hostPort")
 
+        if (shouldBypass(targetHost)) {
+            Log.d("ProxyEngine", "[BYPASS] Domain $targetHost is in bypass list. Tunneling directly.")
+            executor.execute {
+                try {
+                    val targetSocket = Socket()
+                    targetSocket.connect(InetSocketAddress(targetHost, targetPort), 15000)
+
+                    val connectOk = "HTTP/1.1 200 Connection Established\r\n\r\n"
+                    outputStream.write(connectOk.toByteArray(Charsets.UTF_8))
+                    outputStream.flush()
+
+                    val clientToTarget = Thread {
+                        pipeStreams(clientSocket.getInputStream(), targetSocket.getOutputStream(), onStatsUpdated)
+                    }
+                    val targetToClient = Thread {
+                        pipeStreams(targetSocket.getInputStream(), clientSocket.getOutputStream(), onStatsUpdated)
+                    }
+                    clientToTarget.start()
+                    targetToClient.start()
+                    clientToTarget.join()
+                    targetToClient.join()
+                } catch (e: Exception) {
+                    Log.e("ProxyEngine", "[BYPASS] Tunnel error for $hostPort: ${e.message}")
+                } finally {
+                    try { clientSocket.close() } catch (_: Exception) {}
+                }
+            }
+            return
+        }
+
         val connectOk = "HTTP/1.1 200 Connection Established\r\n\r\n"
         outputStream.write(connectOk.toByteArray(Charsets.UTF_8))
         outputStream.flush()
@@ -631,7 +257,7 @@ class ProxyEngine {
         var sslClientSocket: javax.net.ssl.SSLSocket? = null
         try {
             Log.d("ProxyEngine", "[MITM] Starting TLS interception for $targetHost")
-            val sslContext = com.example.util.CertificateManager.getMitmSslContextForHost(targetHost)
+            val sslContext = com.example.util.CertificateManager.getMitmSslContext()
             val sslFactory = sslContext.socketFactory
             sslClientSocket = sslFactory.createSocket(clientSocket, clientSocket.inetAddress?.hostAddress, clientSocket.port, true) as javax.net.ssl.SSLSocket
             sslClientSocket.useClientMode = false
@@ -651,8 +277,8 @@ class ProxyEngine {
                 val innerPath = reqParts[1]
                 val innerVersion = if (reqParts.size > 2) reqParts[2] else "HTTP/1.1"
 
-                val headersMap = mutableMapOf<String, String>()
-                var contentLength = 0
+                val innerHeadersMap = mutableMapOf<String, String>()
+                var innerContentLength = 0
                 while (true) {
                     val line = readHeaderLine(tlsIn) ?: break
                     if (line.isBlank()) break
@@ -660,19 +286,19 @@ class ProxyEngine {
                     if (colonIdx > 0) {
                         val k = line.substring(0, colonIdx).trim()
                         val v = line.substring(colonIdx + 1).trim()
-                        headersMap[k] = v
+                        innerHeadersMap[k] = v
                         if (k.equals("Content-Length", ignoreCase = true)) {
-                            contentLength = v.toIntOrNull() ?: 0
+                            innerContentLength = v.toIntOrNull() ?: 0
                         }
                     }
                 }
 
                 var reqBodyString = ""
-                if (contentLength > 0) {
-                    val bodyBytes = ByteArray(contentLength)
+                if (innerContentLength > 0) {
+                    val bodyBytes = ByteArray(innerContentLength)
                     var totalRead = 0
-                    while (totalRead < contentLength) {
-                        val read = tlsIn.read(bodyBytes, totalRead, contentLength - totalRead)
+                    while (totalRead < innerContentLength) {
+                        val read = tlsIn.read(bodyBytes, totalRead, innerContentLength - totalRead)
                         if (read <= 0) break
                         totalRead += read
                     }
@@ -688,13 +314,18 @@ class ProxyEngine {
                 Log.d("ProxyEngine", "[HTTP1] $innerMethod $innerPath")
                 Log.d("ProxyEngine", "[INTERCEPT] $innerMethod $fullHttpsUrl")
 
+                val shouldIntercept = proxySettings.isInterceptEnabled
+                    && proxySettings.shouldInterceptMethod(innerMethod)
+                    && (!proxySettings.enforceScopeOnly || isUrlInScope(fullHttpsUrl))
+
                 processHttpTransaction(
                     method = innerMethod,
                     fullUrl = fullHttpsUrl,
-                    headersMap = headersMap,
+                    headersMap = innerHeadersMap,
                     requestBodyString = reqBodyString,
                     outputStream = tlsOut,
                     httpClient = httpClient,
+                    shouldIntercept = shouldIntercept,
                     onTransactionCaptured = onTransactionCaptured,
                     onInterceptCaptured = onInterceptCaptured,
                     onStatsUpdated = onStatsUpdated
@@ -707,36 +338,196 @@ class ProxyEngine {
         }
     }
 
-    private fun pipeStreams(input: InputStream, output: OutputStream, onStatsUpdated: (bytes: Long, activeConnIncrement: Int) -> Unit) {
+    private fun processHttpTransaction(
+        method: String,
+        fullUrl: String,
+        headersMap: Map<String, String>,
+        requestBodyString: String,
+        outputStream: OutputStream,
+        httpClient: OkHttpClient,
+        shouldIntercept: Boolean,
+        onTransactionCaptured: (HttpTransactionEntity) -> Unit,
+        onInterceptCaptured: (InterceptedRequestEntity, onAction: (InterceptAction) -> Unit) -> Unit,
+        onStatsUpdated: (bytes: Long, activeConnIncrement: Int) -> Unit
+    ) {
+        val startTime = System.currentTimeMillis()
+
+        if (shouldIntercept) {
+            val interceptedRequest = InterceptedRequestEntity(
+                method = method,
+                url = fullUrl,
+                headersJson = headersMap.toString(),
+                body = requestBodyString
+            )
+
+            var action: InterceptAction? = null
+            val latch = java.util.concurrent.CountDownLatch(1)
+
+            onInterceptCaptured(interceptedRequest) { receivedAction ->
+                action = receivedAction
+                latch.countDown()
+            }
+
+            try {
+                latch.await(30, TimeUnit.SECONDS)
+            } catch (_: Exception) {}
+
+            when (action) {
+                is InterceptAction.Drop -> {
+                    val dropResponse = "HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n"
+                    outputStream.write(dropResponse.toByteArray(Charsets.UTF_8))
+                    outputStream.flush()
+                    return
+                }
+                is InterceptAction.Forward -> {
+                    val forwardAction = action as InterceptAction.Forward
+                    val modifiedRequest = okhttp3.Request.Builder()
+                        .url(forwardAction.url)
+                        .method(forwardAction.method, if (forwardAction.body.isNotEmpty()) okhttp3.RequestBody.create(null, forwardAction.body.toByteArray()) else null)
+                        .build()
+
+                    httpClient.newCall(modifiedRequest).execute().use { response ->
+                        val responseBodyString = response.body?.string() ?: ""
+                        val elapsed = System.currentTimeMillis() - startTime
+
+                        val transaction = HttpTransactionEntity(
+                            method = forwardAction.method,
+                            url = forwardAction.url,
+                            statusCode = response.code,
+                            responseTimeMs = elapsed,
+                            requestHeadersJson = forwardAction.headersJson,
+                            requestBody = forwardAction.body,
+                            responseHeadersJson = response.headers.toString(),
+                            responseBody = responseBodyString,
+                            bytesTransferred = (requestBodyString.length + responseBodyString.length).toLong()
+                        )
+
+                        onTransactionCaptured(transaction)
+                        onStatsUpdated(transaction.bytesTransferred, 0)
+
+                        val statusLine = "HTTP/1.1 ${response.code} ${response.message}\r\n"
+                        outputStream.write(statusLine.toByteArray(Charsets.UTF_8))
+                        response.headers.forEach { (name, value) ->
+                            outputStream.write("$name: $value\r\n".toByteArray(Charsets.UTF_8))
+                        }
+                        outputStream.write("\r\n".toByteArray(Charsets.UTF_8))
+                        outputStream.write(responseBodyString.toByteArray(Charsets.UTF_8))
+                        outputStream.flush()
+                    }
+                    return
+                }
+                else -> {}
+            }
+        }
+
+        val requestBuilder = Request.Builder().url(fullUrl).method(method, if (requestBodyString.isNotEmpty()) okhttp3.RequestBody.create(null, requestBodyString.toByteArray()) else null)
+        headersMap.forEach { (k, v) ->
+            if (!k.equals("Host", ignoreCase = true) && !k.equals("Content-Length", ignoreCase = true)) {
+                requestBuilder.header(k, v)
+            }
+        }
+
+        httpClient.newCall(requestBuilder.build()).execute().use { response ->
+            val responseBodyString = response.body?.string() ?: ""
+            val elapsed = System.currentTimeMillis() - startTime
+
+            val transaction = HttpTransactionEntity(
+                method = method,
+                url = fullUrl,
+                statusCode = response.code,
+                responseTimeMs = elapsed,
+                requestHeadersJson = headersMap.toString(),
+                requestBody = requestBodyString,
+                responseHeadersJson = response.headers.toString(),
+                responseBody = responseBodyString,
+                bytesTransferred = (requestBodyString.length + responseBodyString.length).toLong()
+            )
+
+            onTransactionCaptured(transaction)
+            onStatsUpdated(transaction.bytesTransferred, 0)
+
+            val statusLine = "HTTP/1.1 ${response.code} ${response.message}\r\n"
+            outputStream.write(statusLine.toByteArray(Charsets.UTF_8))
+            response.headers.forEach { (name, value) ->
+                outputStream.write("$name: $value\r\n".toByteArray(Charsets.UTF_8))
+            }
+            outputStream.write("\r\n".toByteArray(Charsets.UTF_8))
+            outputStream.write(responseBodyString.toByteArray(Charsets.UTF_8))
+            outputStream.flush()
+        }
+    }
+
+    private fun readHeaderLine(inputStream: InputStream): String? {
+        val sb = StringBuilder()
+        var prev: Int = -1
+        while (true) {
+            val b = inputStream.read()
+            if (b == -1) return if (sb.isEmpty()) null else sb.toString()
+            if (prev == '\r'.code && b == '\n'.code) {
+                return sb.dropLast(1).toString()
+            }
+            sb.append(b.toChar())
+            prev = b
+        }
+    }
+
+    private fun pipeStreams(from: InputStream, to: OutputStream, onStatsUpdated: (bytes: Long, activeConnIncrement: Int) -> Unit) {
         val buffer = ByteArray(8192)
         try {
-            var read: Int
-            while (input.read(buffer).also { read = it } != -1) {
-                output.write(buffer, 0, read)
-                output.flush()
+            while (isRunning) {
+                val read = from.read(buffer)
+                if (read <= 0) break
+                to.write(buffer, 0, read)
+                to.flush()
                 onStatsUpdated(read.toLong(), 0)
             }
         } catch (_: Exception) {}
     }
 
-    private fun getStatusMessage(code: Int): String {
-        return when (code) {
-            200 -> "OK"
-            201 -> "Created"
-            202 -> "Accepted"
-            204 -> "No Content"
-            301 -> "Moved Permanently"
-            302 -> "Found"
-            304 -> "Not Modified"
-            400 -> "Bad Request"
-            401 -> "Unauthorized"
-            403 -> "Forbidden"
-            404 -> "Not Found"
-            405 -> "Method Not Allowed"
-            500 -> "Internal Server Error"
-            502 -> "Bad Gateway"
-            503 -> "Service Unavailable"
-            else -> "HTTP Response"
+    private fun buildOkHttpClient(): OkHttpClient {
+        return OkHttpClient.Builder()
+            .connectTimeout(30, TimeUnit.SECONDS)
+            .readTimeout(30, TimeUnit.SECONDS)
+            .build()
+    }
+
+    private fun shouldBypass(host: String): Boolean {
+        val cleanHost = host.trim().lowercase()
+        return bypassDomains.any { pattern ->
+            val cleanPattern = pattern.trim().lowercase()
+                .removePrefix("http://")
+                .removePrefix("https://")
+                .substringBefore("/")
+                .substringBefore(":")
+
+            when {
+                cleanPattern.startsWith("*.") -> {
+                    val suffix = cleanPattern.removePrefix("*.")
+                    cleanHost == suffix || cleanHost.endsWith(".$suffix")
+                }
+                cleanPattern.startsWith("*") -> {
+                    cleanHost.contains(cleanPattern.removePrefix("*"))
+                }
+                else -> {
+                    cleanHost == cleanPattern || cleanHost.endsWith(".$cleanPattern")
+                }
+            }
+        }
+    }
+
+    private fun isUrlInScope(url: String): Boolean {
+        if (activeScopes.isEmpty()) return true
+        val urlLower = url.lowercase()
+        return activeScopes.any { scope ->
+            if (!scope.isInScope) return@any false
+            val pattern = scope.pattern.trim().lowercase()
+                .removePrefix("http://")
+                .removePrefix("https://")
+                .removePrefix("*.")
+                .removePrefix(".")
+            val hostMatch = urlLower.contains(pattern) ||
+                    urlLower.contains("*.$pattern")
+            hostMatch
         }
     }
 }

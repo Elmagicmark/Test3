@@ -21,6 +21,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.local.HttpTransactionEntity
+import com.example.data.local.TargetScopeEntity
 import com.example.ui.components.CyberCard
 import com.example.ui.components.MethodBadge
 import com.example.ui.components.StatusCodeBadge
@@ -30,6 +31,8 @@ import com.example.ui.theme.*
 @Composable
 fun HistoryScreen(
     transactions: List<HttpTransactionEntity>,
+    targetScopes: List<TargetScopeEntity>,
+    filterHistoryByScope: Boolean,
     onDelete: (Long) -> Unit,
     onDeleteBatch: (List<Long>) -> Unit,
     onClearAll: () -> Unit,
@@ -44,9 +47,26 @@ fun HistoryScreen(
     var selectedIds by remember { mutableStateOf(setOf<Long>()) }
     val context = LocalContext.current
 
-    // Apply Filter & Search Logic
-    val filteredList = remember(transactions, searchQuery, selectedMethodFilter, selectedStatusFilter, sortBy) {
-        transactions.filter { tx ->
+    val scopeFilteredList = remember(transactions, targetScopes, filterHistoryByScope) {
+        if (!filterHistoryByScope || targetScopes.isEmpty()) {
+            transactions
+        } else {
+            val inScopePatterns = targetScopes
+                .filter { it.isInScope }
+                .map { it.pattern.trim().lowercase() }
+
+            transactions.filter { tx ->
+                val urlLower = tx.url.lowercase()
+                inScopePatterns.any { pattern ->
+                    urlLower.contains(pattern) ||
+                    urlLower.contains("*.$pattern")
+                }
+            }
+        }
+    }
+
+    val filteredList = remember(scopeFilteredList, searchQuery, selectedMethodFilter, selectedStatusFilter, sortBy) {
+        scopeFilteredList.filter { tx ->
             val matchesQuery = searchQuery.isEmpty() || tx.url.contains(searchQuery, ignoreCase = true) || tx.requestBody.contains(searchQuery, ignoreCase = true)
             val matchesMethod = selectedMethodFilter == "ALL" || tx.method.equals(selectedMethodFilter, ignoreCase = true)
             val matchesStatus = when (selectedStatusFilter) {
@@ -62,7 +82,7 @@ fun HistoryScreen(
                 "OLDEST" -> a.timestamp.compareTo(b.timestamp)
                 "SLOWEST" -> b.responseTimeMs.compareTo(a.responseTimeMs)
                 "STATUS" -> b.statusCode.compareTo(a.statusCode)
-                else -> b.timestamp.compareTo(a.timestamp) // NEWEST
+                else -> b.timestamp.compareTo(a.timestamp)
             }
         }
     }
@@ -73,7 +93,25 @@ fun HistoryScreen(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        // Search & Filter Bar
+        if (filterHistoryByScope && targetScopes.isNotEmpty()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFF003814), RoundedCornerShape(4.dp))
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Default.FilterAlt, contentDescription = null, tint = NeonGreen, modifier = Modifier.size(14.dp))
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = "FILTERED BY SCOPE: ${targetScopes.filter { it.isInScope }.size} rule(s)",
+                    fontSize = 10.sp,
+                    fontFamily = FontFamily.Monospace,
+                    color = NeonGreen
+                )
+            }
+        }
+
         OutlinedTextField(
             value = searchQuery,
             onValueChange = { searchQuery = it },
@@ -88,12 +126,10 @@ fun HistoryScreen(
             textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = OnCyberDark)
         )
 
-        // Filter chips row
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            // Method Filter Dropdown
             var methodExpanded by remember { mutableStateOf(false) }
             Box(modifier = Modifier.weight(1f)) {
                 OutlinedButton(
@@ -114,7 +150,6 @@ fun HistoryScreen(
                 }
             }
 
-            // Status Filter Dropdown
             var statusExpanded by remember { mutableStateOf(false) }
             Box(modifier = Modifier.weight(1f)) {
                 OutlinedButton(
@@ -135,7 +170,6 @@ fun HistoryScreen(
                 }
             }
 
-            // Sort Dropdown
             var sortExpanded by remember { mutableStateOf(false) }
             Box(modifier = Modifier.weight(1f)) {
                 OutlinedButton(
@@ -157,7 +191,6 @@ fun HistoryScreen(
             }
         }
 
-        // Multi-select and Export action header
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -193,7 +226,6 @@ fun HistoryScreen(
             }
         }
 
-        // List View
         if (filteredList.isEmpty()) {
             CyberCard(modifier = Modifier.fillMaxWidth().weight(1f)) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {

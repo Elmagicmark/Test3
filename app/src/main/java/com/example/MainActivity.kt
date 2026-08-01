@@ -145,6 +145,32 @@ class MainActivity : ComponentActivity() {
                                         }
                                     }
 
+                                    // Certificate Quick Export Badge Button in TopBar
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .background(NeonAmber.copy(alpha = 0.15f))
+                                            .border(1.dp, NeonAmber, RoundedCornerShape(12.dp))
+                                            .clickable { navController.navigate(NavRoutes.CERTS) }
+                                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                            Icon(
+                                                imageVector = Icons.Default.VpnKey,
+                                                contentDescription = "Cert",
+                                                tint = NeonAmber,
+                                                modifier = Modifier.size(12.dp)
+                                            )
+                                            Text(
+                                                text = "الشهادة",
+                                                color = NeonAmber,
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.ExtraBold,
+                                                fontFamily = FontFamily.Monospace
+                                            )
+                                        }
+                                    }
+
                                     // Quick Intercept Toggle Badge Button
                                     Box(
                                         modifier = Modifier
@@ -313,6 +339,7 @@ class MainActivity : ComponentActivity() {
                         composable(NavRoutes.HISTORY) {
                             HistoryScreen(
                                 transactions = transactions,
+                                targetScopes = targetScopes,
                                 onDelete = { mainViewModel.deleteTransaction(it) },
                                 onDeleteBatch = { mainViewModel.deleteTransactions(it) },
                                 onClearAll = { mainViewModel.clearHistory() },

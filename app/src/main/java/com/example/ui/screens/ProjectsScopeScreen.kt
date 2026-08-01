@@ -56,6 +56,55 @@ fun ProjectsScopeScreen(
             .padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        // CA Certificate Quick Export Bar
+        CyberCard(borderColor = NeonAmber, accentLeftColor = NeonAmber) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Default.VpnKey, contentDescription = "Cert", tint = NeonAmber, modifier = Modifier.size(18.dp))
+                    Column {
+                        Text(
+                            text = "شهادة التشفير ROOT CA",
+                            color = OnCyberDark,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace
+                        )
+                        Text(
+                            text = "مطلوبة لفك تشفير HTTPS للنطاقات المستهدفة",
+                            color = OnCyberSurfaceMuted,
+                            fontSize = 9.5.sp,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
+                }
+
+                Button(
+                    onClick = {
+                        val result = com.example.util.CertificateManager.exportCertificateToDownloads(context)
+                        Toast.makeText(context, result.second, Toast.LENGTH_LONG).show()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = NeonAmber, contentColor = Color.Black),
+                    shape = RoundedCornerShape(4.dp),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                    modifier = Modifier
+                        .height(28.dp)
+                        .testTag("export_ca_cert_scope_button")
+                ) {
+                    Icon(Icons.Default.FileDownload, contentDescription = "Export", modifier = Modifier.size(13.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("تصدير الشهادة (.PEM)", fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                }
+            }
+        }
+
         // Target Scope Controls & Settings Card
         CyberCard(borderColor = NeonAmber) {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {

@@ -76,25 +76,27 @@ fun CertificatesScreen(
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = NeonAmber, contentColor = Color.Black),
                             shape = RoundedCornerShape(4.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
                             modifier = Modifier.testTag("install_ca_cert_button")
                         ) {
-                            Icon(Icons.Default.Security, contentDescription = "Install System", modifier = Modifier.size(14.dp))
+                            Icon(Icons.Default.Security, contentDescription = "Install System", modifier = Modifier.size(13.dp))
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("INSTALL IN SYSTEM", fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                            Text("تثبيت الشهادة (INSTALL)", fontSize = 9.5.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
                         }
 
-                        OutlinedButton(
+                        Button(
                             onClick = {
                                 val result = com.example.util.CertificateManager.exportCertificateToDownloads(context)
                                 Toast.makeText(context, result.second, Toast.LENGTH_LONG).show()
                             },
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = NeonAmber),
+                            colors = ButtonDefaults.buttonColors(containerColor = CyberCyan, contentColor = Color.Black),
                             shape = RoundedCornerShape(4.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
                             modifier = Modifier.testTag("export_ca_cert_button")
                         ) {
-                            Icon(Icons.Default.FileDownload, contentDescription = "Export", modifier = Modifier.size(14.dp))
+                            Icon(Icons.Default.FileDownload, contentDescription = "Export", modifier = Modifier.size(13.dp))
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("EXPORT (.CRT & .PEM)", fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                            Text("تصدير الشهادة (EXPORT)", fontSize = 9.5.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
                         }
 
                         IconButton(

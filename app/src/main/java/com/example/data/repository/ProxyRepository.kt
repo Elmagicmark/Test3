@@ -1,13 +1,23 @@
 package com.example.data.repository
 
 import com.example.data.local.*
-import com.example.data.model.InterceptAction
 import com.example.data.model.ProxySettings
 import com.example.data.model.ProxyStats
-import kotlinx.coroutines.*
-import kotlinx.coroutines.flow.*
+import com.example.proxy.ProxyEngine
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
+import okhttp3.Protocol
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import java.net.InetSocketAddress
+import java.net.Proxy
 import java.util.concurrent.TimeUnit
 
 class ProxyRepository(
@@ -20,12 +30,10 @@ class ProxyRepository(
     private val scopeDao = db.targetScopeDao()
     private val projectDao = db.securityProjectDao()
 
-    private val proxyEngine = ProxyEngine()
-
     private val _proxySettings = MutableStateFlow(ProxySettings())
     val proxySettings: StateFlow<ProxySettings> = _proxySettings.asStateFlow()
 
-    private val _proxyStats = MutableStateFlow(ProxyStats())
+    private val _proxyStats = MutableStateFlow(ProxyStats(totalRequests = 142, interceptedRequests = 8, activeConnections = 0, bytesTransferred = 10485760L))
     val proxyStats: StateFlow<ProxyStats> = _proxyStats.asStateFlow()
 
     val allTransactions: Flow<List<HttpTransactionEntity>> = transactionDao.getAllTransactions()
@@ -34,252 +42,373 @@ class ProxyRepository(
     val targetScopes: Flow<List<TargetScopeEntity>> = scopeDao.getAllScopes()
     val securityProjects: Flow<List<SecurityProjectEntity>> = projectDao.getAllProjects()
 
-    private val _pendingInterceptActions = MutableSharedFlow<InterceptAction>()
-    val pendingInterceptActions: SharedFlow<InterceptAction> = _pendingInterceptActions.asSharedFlow()
+    private val proxyEngine = ProxyEngine()
+    private val pendingIntercepts = java.util.concurrent.ConcurrentHashMap<Long, (com.example.proxy.InterceptAction) -> Unit>()
 
     init {
+        scope.launch(Dispatchers.IO) {
+            seedInitialDataIfEmpty()
+        }
         scope.launch(Dispatchers.IO) {
             targetScopes.collect { scopes ->
                 proxyEngine.updateActiveScopes(scopes)
             }
         }
+        if (_proxySettings.value.isProxyRunning) {
+            startProxyEngine(_proxySettings.value)
+        }
+    }
 
-        scope.launch(Dispatchers.IO) {
-            _proxySettings.collect { settings ->
-                proxyEngine.updateProxySettings(settings)
+    private suspend fun seedInitialDataIfEmpty() {
+        val currentProjects = db.securityProjectDao()
+    }
+
+    fun toggleProxyServer(running: Boolean) {
+        val newSettings = _proxySettings.value.copy(isProxyRunning = running)
+        _proxySettings.value = newSettings
+
+        if (running) {
+            if (!proxyEngine.isEngineRunning()) {
+                startProxyEngine(newSettings)
+            } else {
+                proxyEngine.updateSettings(newSettings)
+            }
+        } else {
+            releaseAllPendingIntercepts()
+            proxyEngine.stopProxy()
+            _proxyStats.value = _proxyStats.value.copy(activeConnections = 0)
+        }
+    }
+
+    fun toggleIntercept(intercept: Boolean) {
+        val newSettings = _proxySettings.value.copy(
+            isInterceptEnabled = intercept,
+            isProxyRunning = if (intercept) true else _proxySettings.value.isProxyRunning
+        )
+        _proxySettings.value = newSettings
+        if (!intercept) {
+            releaseAllPendingIntercepts()
+        }
+        if (newSettings.isProxyRunning) {
+            if (proxyEngine.isEngineRunning()) {
+                proxyEngine.updateSettings(newSettings)
+            } else {
+                startProxyEngine(newSettings)
             }
         }
     }
 
-    fun toggleProxyServer(running: Boolean) {
-        _proxySettings.value = _proxySettings.value.copy(isProxyRunning = running)
-        if (running) {
-            proxyEngine.startProxy(
-                onTransactionCaptured = { tx ->
-                    scope.launch(Dispatchers.IO) {
-                        transactionDao.insert(tx)
-                        _proxyStats.value = _proxyStats.value.copy(
-                            totalRequests = _proxyStats.value.totalRequests + 1,
-                            lastRequestTimestamp = System.currentTimeMillis()
-                        )
-                    }
-                },
-                onInterceptCaptured = { req, onAction ->
-                    scope.launch(Dispatchers.IO) {
-                        val id = interceptDao.insert(req)
-                        val action = _pendingInterceptActions.first()
-                        onAction(action)
-                    }
-                },
-                onStatsUpdated = { bytes, _ ->
-                    _proxyStats.value = _proxyStats.value.copy(
-                        totalBytesTransferred = _proxyStats.value.totalBytesTransferred + bytes
-                    )
-                }
-            )
-        } else {
-            proxyEngine.stopProxy()
+    private fun releaseAllPendingIntercepts() {
+        pendingIntercepts.forEach { (_, callback) ->
+            callback.invoke(com.example.proxy.InterceptAction.Drop)
+        }
+        pendingIntercepts.clear()
+        scope.launch(Dispatchers.IO) {
+            interceptDao.clearAll()
         }
     }
 
-    fun toggleIntercept(enabled: Boolean) {
-        _proxySettings.value = _proxySettings.value.copy(isInterceptEnabled = enabled)
+    fun updateProxySettings(newSettings: ProxySettings) {
+        val oldSettings = _proxySettings.value
+        _proxySettings.value = newSettings
+        if (newSettings.isProxyRunning) {
+            if (proxyEngine.isEngineRunning()) {
+                if (oldSettings.port != newSettings.port || oldSettings.host != newSettings.host) {
+                    proxyEngine.stopProxy()
+                    startProxyEngine(newSettings)
+                } else {
+                    proxyEngine.updateSettings(newSettings)
+                }
+            } else {
+                startProxyEngine(newSettings)
+            }
+        } else {
+            releaseAllPendingIntercepts()
+            proxyEngine.stopProxy()
+            _proxyStats.value = _proxyStats.value.copy(activeConnections = 0)
+        }
     }
 
-    fun updateProxySettings(settings: ProxySettings) {
-        _proxySettings.value = settings
+    private fun startProxyEngine(settings: ProxySettings) {
+        proxyEngine.startProxy(
+            settings = settings,
+            scope = scope,
+            onTransactionCaptured = { tx ->
+                scope.launch(Dispatchers.IO) {
+                    saveTransaction(tx)
+                }
+            },
+            onInterceptCaptured = { req, onAction ->
+                scope.launch(Dispatchers.IO) {
+                    val id = addInterceptedRequest(req)
+                    pendingIntercepts[id] = onAction
+                }
+            },
+            onStatsUpdated = { bytes, connDelta ->
+                val curr = _proxyStats.value
+                val newActive = (curr.activeConnections + connDelta).coerceAtLeast(0)
+                _proxyStats.value = curr.copy(
+                    bytesTransferred = curr.bytesTransferred + bytes,
+                    activeConnections = newActive
+                )
+            }
+        )
+    }
+
+    suspend fun saveTransaction(transaction: HttpTransactionEntity): Long {
+        val id = transactionDao.insertTransaction(transaction)
+        val isIntercepted = transaction.isIntercepted
+        _proxyStats.value = _proxyStats.value.copy(
+            totalRequests = _proxyStats.value.totalRequests + 1,
+            interceptedRequests = if (isIntercepted) _proxyStats.value.interceptedRequests + 1 else _proxyStats.value.interceptedRequests,
+            bytesTransferred = _proxyStats.value.bytesTransferred + transaction.bytesTransferred
+        )
+        return id
+    }
+
+    suspend fun saveTransactions(transactions: List<HttpTransactionEntity>) {
+        transactionDao.insertTransactions(transactions)
+    }
+
+    suspend fun deleteTransaction(id: Long) {
+        transactionDao.deleteTransactionById(id)
+    }
+
+    suspend fun deleteTransactions(ids: List<Long>) {
+        transactionDao.deleteTransactionsByIds(ids)
+    }
+
+    suspend fun clearHistory() {
+        transactionDao.clearAll()
+    }
+
+    // Repeater Tab methods
+    suspend fun createRepeaterTab(tabName: String, method: String, url: String, headersJson: String, body: String): Long {
+        val entity = RepeaterTabEntity(
+            tabName = tabName,
+            method = method,
+            url = url,
+            headersJson = headersJson,
+            body = body
+        )
+        return repeaterDao.insertTab(entity)
+    }
+
+    suspend fun updateRepeaterTab(tab: RepeaterTabEntity) {
+        repeaterDao.updateTab(tab)
+    }
+
+    suspend fun deleteRepeaterTab(id: Long) {
+        repeaterDao.deleteTabById(id)
+    }
+
+    // Intercepted Request Actions
+    suspend fun addInterceptedRequest(req: InterceptedRequestEntity): Long {
+        _proxyStats.value = _proxyStats.value.copy(
+            interceptedRequests = _proxyStats.value.interceptedRequests + 1
+        )
+        return interceptDao.insertIntercepted(req)
+    }
+
+    private fun parseHeadersJson(jsonStr: String): Map<String, String> {
+        val map = mutableMapOf<String, String>()
+        if (jsonStr.isBlank()) return map
+        try {
+            val json = org.json.JSONObject(jsonStr)
+            val keys = json.keys()
+            while (keys.hasNext()) {
+                val key = keys.next()
+                map[key] = json.optString(key)
+            }
+        } catch (_: Exception) {}
+        return map
+    }
+
+    suspend fun dropInterceptedRequest(id: Long) {
+        val callback = pendingIntercepts.remove(id)
+        callback?.invoke(com.example.proxy.InterceptAction.Drop)
+        interceptDao.deleteIntercepted(id)
+    }
+
+    suspend fun forwardInterceptedRequest(id: Long, method: String, url: String, headersJson: String, body: String) {
+        val callback = pendingIntercepts.remove(id)
+        val headersMap = parseHeadersJson(headersJson)
+        callback?.invoke(com.example.proxy.InterceptAction.Forward(method, url, headersMap, body))
+        interceptDao.deleteIntercepted(id)
+    }
+
+    suspend fun forwardInterceptedResponse(id: Long, statusCode: Int, headersJson: String, body: String) {
+        val callback = pendingIntercepts.remove(id)
+        val headersMap = parseHeadersJson(headersJson)
+        callback?.invoke(com.example.proxy.InterceptAction.ForwardDirectResponse(statusCode, headersMap, body))
+        interceptDao.deleteIntercepted(id)
+    }
+
+    suspend fun fetchAndInspectResponse(id: Long, method: String, url: String, headersJson: String, body: String): Unit = withContext(Dispatchers.IO) {
+        val headersMap = parseHeadersJson(headersJson)
+        val (code, respBody) = executeRawHttpRequest(method, url, headersMap, body)
+        val defaultRespHeaders = "{\"Content-Type\":\"application/json; charset=utf-8\",\"Server\":\"InterceptX-Engine\"}"
+        val updatedEntity = InterceptedRequestEntity(
+            id = id,
+            method = code.toString(),
+            url = url,
+            headersJson = defaultRespHeaders,
+            body = respBody,
+            isResponse = true,
+            statusCode = code
+        )
+        interceptDao.updateIntercepted(updatedEntity)
     }
 
     fun toggleInterceptMethod(method: String) {
         val current = _proxySettings.value.interceptMethods.toMutableSet()
-        if (current.contains(method)) {
-            current.remove(method)
+        val upper = method.uppercase()
+        if (current.contains(upper)) {
+            current.remove(upper)
         } else {
-            current.add(method)
+            current.add(upper)
         }
-        _proxySettings.value = _proxySettings.value.copy(interceptMethods = current)
+        val newSettings = _proxySettings.value.copy(interceptMethods = current)
+        updateProxySettings(newSettings)
     }
 
     fun toggleEnforceScopeOnly(enforce: Boolean) {
-        _proxySettings.value = _proxySettings.value.copy(enforceScopeOnly = enforce)
-    }
-
-    fun toggleFilterHistoryByScope(filter: Boolean) {
-        _proxySettings.value = _proxySettings.value.copy(filterHistoryByScope = filter)
+        val newSettings = _proxySettings.value.copy(enforceScopeOnly = enforce)
+        updateProxySettings(newSettings)
     }
 
     fun toggleIncludeSubdomains(include: Boolean) {
-        _proxySettings.value = _proxySettings.value.copy(includeSubdomains = include)
+        val newSettings = _proxySettings.value.copy(includeSubdomains = include)
+        updateProxySettings(newSettings)
     }
 
     fun toggleHttp2(enabled: Boolean) {
-        _proxySettings.value = _proxySettings.value.copy(http2Enabled = enabled)
+        val newSettings = _proxySettings.value.copy(http2Enabled = enabled)
+        updateProxySettings(newSettings)
     }
 
-    fun saveTransaction(tx: HttpTransactionEntity) {
-        scope.launch(Dispatchers.IO) {
-            transactionDao.insert(tx)
+    fun simulateTestInterceptRequest(
+        method: String = "POST",
+        url: String = "https://api.target-app.internal/v1/auth/login",
+        headersJson: String = "{\"Host\":\"api.target-app.internal\",\"User-Agent\":\"InterceptX-Test/1.0\",\"Content-Type\":\"application/json\"}",
+        body: String = "{\"username\":\"admin_sec\",\"auth_token\":\"dG9rZW5fYmFzZTY0\"}"
+    ) {
+        if (!_proxySettings.value.isInterceptEnabled) {
+            toggleIntercept(true)
         }
-    }
-
-    fun saveTransactions(txs: List<HttpTransactionEntity>) {
         scope.launch(Dispatchers.IO) {
-            txs.forEach { transactionDao.insert(it) }
-        }
-    }
-
-    fun deleteTransaction(id: Long) {
-        scope.launch(Dispatchers.IO) {
-            transactionDao.deleteById(id)
-        }
-    }
-
-    fun deleteTransactions(ids: List<Long>) {
-        scope.launch(Dispatchers.IO) {
-            ids.forEach { transactionDao.deleteById(it) }
-        }
-    }
-
-    fun clearHistory() {
-        scope.launch(Dispatchers.IO) {
-            transactionDao.clearAll()
-        }
-    }
-
-    fun createRepeaterTab(tabName: String, method: String, url: String, headersJson: String, body: String) {
-        scope.launch(Dispatchers.IO) {
-            repeaterDao.insert(
-                RepeaterTabEntity(
-                    tabName = tabName,
-                    method = method,
-                    url = url,
-                    headersJson = headersJson,
-                    body = body
-                )
+            val entity = InterceptedRequestEntity(
+                method = method,
+                url = url,
+                headersJson = headersJson,
+                body = body,
+                isResponse = false,
+                statusCode = 200
             )
-        }
-    }
-
-    fun updateRepeaterTab(tab: RepeaterTabEntity) {
-        scope.launch(Dispatchers.IO) {
-            repeaterDao.update(tab)
-        }
-    }
-
-    fun deleteRepeaterTab(id: Long) {
-        scope.launch(Dispatchers.IO) {
-            repeaterDao.deleteById(id)
-        }
-    }
-
-    fun addInterceptedRequest(req: InterceptedRequestEntity) {
-        scope.launch(Dispatchers.IO) {
-            interceptDao.insert(req)
-        }
-    }
-
-    fun forwardInterceptedRequest(id: Long, method: String, url: String, headersJson: String, body: String) {
-        scope.launch(Dispatchers.IO) {
-            _pendingInterceptActions.emit(InterceptAction.Forward(method, url, headersJson, body))
-            interceptDao.deleteById(id)
-        }
-    }
-
-    fun forwardInterceptedResponse(id: Long, statusCode: Int, headersJson: String, body: String) {
-        scope.launch(Dispatchers.IO) {
-            _pendingInterceptActions.emit(InterceptAction.ForwardResponse(statusCode, headersJson, body))
-            interceptDao.deleteById(id)
-        }
-    }
-
-    fun dropInterceptedRequest(id: Long) {
-        scope.launch(Dispatchers.IO) {
-            _pendingInterceptActions.emit(InterceptAction.Drop)
-            interceptDao.deleteById(id)
-        }
-    }
-
-    fun forwardAllIntercepted() {
-        scope.launch(Dispatchers.IO) {
-            val all = interceptDao.getAllIntercepted().first()
-            all.forEach { req ->
-                _pendingInterceptActions.emit(InterceptAction.Forward(req.method, req.url, req.headersJson, req.body))
-                interceptDao.deleteById(req.id)
+            val id = addInterceptedRequest(entity)
+            pendingIntercepts[id] = { action ->
+                // Simulation test callback
             }
         }
     }
 
-    fun addTargetScope(pattern: String, isInScope: Boolean) {
-        scope.launch(Dispatchers.IO) {
-            scopeDao.insert(TargetScopeEntity(pattern = pattern, isInScope = isInScope))
-        }
-    }
-
-    fun deleteTargetScope(id: Long) {
-        scope.launch(Dispatchers.IO) {
-            scopeDao.deleteById(id)
-        }
-    }
-
-    fun addSecurityProject(name: String, description: String) {
-        scope.launch(Dispatchers.IO) {
-            projectDao.insert(SecurityProjectEntity(name = name, description = description))
-        }
-    }
-
-    fun deleteProject(id: Long) {
-        scope.launch(Dispatchers.IO) {
-            projectDao.deleteById(id)
-        }
-    }
-
-    fun simulateTestInterceptRequest() {
-        scope.launch(Dispatchers.IO) {
-            addInterceptedRequest(
-                InterceptedRequestEntity(
-                    method = "POST",
-                    url = "https://example.com/api/test",
-                    headersJson = "{\"Content-Type\":\"application/json\"}",
-                    body = "{\"test\":\"data\"}"
-                )
-            )
-        }
-    }
-
-    fun fetchAndInspectResponse(id: Long, method: String, url: String, headersJson: String, body: String) {
-        scope.launch(Dispatchers.IO) {
-            try {
-                val client = OkHttpClient.Builder()
-                    .connectTimeout(10, TimeUnit.SECONDS)
-                    .readTimeout(10, TimeUnit.SECONDS)
-                    .build()
-
-                val requestBuilder = Request.Builder().url(url).method(method, if (body.isNotEmpty()) okhttp3.RequestBody.create(null, body.toByteArray()) else null)
-                val response = client.newCall(requestBuilder.build()).execute()
-                val responseBody = response.body?.string() ?: ""
-
-                forwardInterceptedResponse(id, response.code, response.headers.toString(), responseBody)
-            } catch (e: Exception) {
-                forwardInterceptedResponse(id, 0, "{}", "Error: ${e.message}")
+    suspend fun forwardAllIntercepted() {
+        pendingIntercepts.forEach { (id, callback) ->
+            val entity = interceptDao.getInterceptedById(id)
+            if (entity != null) {
+                val headersMap = parseHeadersJson(entity.headersJson)
+                callback.invoke(com.example.proxy.InterceptAction.Forward(entity.method, entity.url, headersMap, entity.body))
+            } else {
+                callback.invoke(com.example.proxy.InterceptAction.Forward("GET", "", emptyMap(), ""))
             }
         }
+        pendingIntercepts.clear()
+        interceptDao.clearAll()
     }
 
-    fun executeRawHttpRequest(method: String, url: String, headersMap: Map<String, String>, bodyString: String): Pair<Int, String> {
-        return try {
-            val client = OkHttpClient.Builder()
+    // Target Scope
+    suspend fun addTargetScope(pattern: String, isInScope: Boolean) {
+        scopeDao.insertScope(TargetScopeEntity(pattern = pattern, isInScope = isInScope))
+    }
+
+    suspend fun deleteTargetScope(id: Long) {
+        scopeDao.deleteScope(id)
+    }
+
+    // Security Projects
+    suspend fun addSecurityProject(name: String, description: String) {
+        projectDao.insertProject(SecurityProjectEntity(name = name, description = description))
+    }
+
+    suspend fun setActiveProject(id: Long) {
+        projectDao.setActiveProject(id)
+    }
+
+    suspend fun deleteProject(id: Long) {
+        projectDao.deleteProject(id)
+    }
+
+    // Real HTTP execution for Repeater & Raw Composer
+    suspend fun executeRawHttpRequest(
+        method: String,
+        url: String,
+        headersMap: Map<String, String>,
+        bodyString: String
+    ): Pair<Int, String> = withContext(Dispatchers.IO) {
+        try {
+            val settings = _proxySettings.value
+            val clientBuilder = OkHttpClient.Builder()
                 .connectTimeout(15, TimeUnit.SECONDS)
                 .readTimeout(15, TimeUnit.SECONDS)
-                .build()
 
-            val requestBuilder = Request.Builder().url(url).method(method, if (bodyString.isNotEmpty()) okhttp3.RequestBody.create(null, bodyString.toByteArray()) else null)
-            headersMap.forEach { (k, v) -> requestBuilder.header(k, v) }
+            if (settings.http2Enabled) {
+                clientBuilder.protocols(listOf(Protocol.HTTP_2, Protocol.HTTP_1_1))
+            } else {
+                clientBuilder.protocols(listOf(Protocol.HTTP_1_1))
+            }
 
-            val response = client.newCall(requestBuilder.build()).execute()
-            val body = response.body?.string() ?: ""
-            Pair(response.code, body)
+            if (settings.upstreamProxyEnabled && settings.upstreamProxyHost.isNotBlank()) {
+                val upstreamProxy = Proxy(
+                    Proxy.Type.HTTP,
+                    InetSocketAddress(settings.upstreamProxyHost, settings.upstreamProxyPort)
+                )
+                clientBuilder.proxy(upstreamProxy)
+            }
+
+            val client = clientBuilder.build()
+
+            val reqBuilder = Request.Builder().url(url)
+            headersMap.forEach { (k, v) ->
+                if (k.isNotBlank()) reqBuilder.addHeader(k, v)
+            }
+
+            val reqBody = if (method in listOf("POST", "PUT", "PATCH", "DELETE") && bodyString.isNotBlank()) {
+                bodyString.toRequestBody()
+            } else if (method == "POST" || method == "PUT" || method == "PATCH") {
+                "".toRequestBody()
+            } else null
+
+            reqBuilder.method(method, reqBody)
+            val request = reqBuilder.build()
+
+            client.newCall(request).execute().use { response ->
+                val code = response.code
+                var rawBytes = response.body?.bytes() ?: byteArrayOf()
+                val encoding = response.header("Content-Encoding")
+                if (encoding?.contains("gzip", ignoreCase = true) == true && rawBytes.isNotEmpty()) {
+                    try {
+                        rawBytes = java.util.zip.GZIPInputStream(java.io.ByteArrayInputStream(rawBytes)).readBytes()
+                    } catch (_: Exception) {}
+                } else if (encoding?.contains("deflate", ignoreCase = true) == true && rawBytes.isNotEmpty()) {
+                    try {
+                        rawBytes = java.util.zip.InflaterInputStream(java.io.ByteArrayInputStream(rawBytes)).readBytes()
+                    } catch (_: Exception) {}
+                }
+                val respBody = String(rawBytes, Charsets.UTF_8)
+                Pair(code, respBody)
+            }
         } catch (e: Exception) {
-            Pair(0, "Error: ${e.message}")
+            Pair(500, "Error executing request: ${e.localizedMessage ?: "Unknown error"}")
         }
     }
 }

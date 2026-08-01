@@ -185,10 +185,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         repository.toggleEnforceScopeOnly(enforce)
     }
 
-    fun toggleFilterHistoryByScope(filter: Boolean) {
-        repository.toggleFilterHistoryByScope(filter)
-    }
-
     fun toggleIncludeSubdomains(include: Boolean) {
         repository.toggleIncludeSubdomains(include)
     }
@@ -320,7 +316,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val status = rawResp.first
             val responseBody = rawResp.second
             val elapsed = System.currentTimeMillis() - startTime
-
+            
+            // Save transaction log
             repository.saveTransaction(
                 HttpTransactionEntity(
                     method = method,

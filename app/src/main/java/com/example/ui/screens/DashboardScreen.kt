@@ -109,14 +109,14 @@ fun DashboardScreen(
                         Icon(Icons.Default.VpnKey, contentDescription = "Cert", tint = NeonAmber, modifier = Modifier.size(20.dp))
                         Column {
                             Text(
-                                text = "ROOT CA CERTIFICATE",
+                                text = "شهادة التشفير ROOT CA CERT",
                                 color = OnCyberDark,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
                                 fontFamily = FontFamily.Monospace
                             )
                             Text(
-                                text = "InterceptX_Root_CA.pem",
+                                text = "تصدير شهادة InterceptX_Root_CA.pem",
                                 color = OnCyberSurfaceMuted,
                                 fontSize = 10.sp,
                                 fontFamily = FontFamily.Monospace
@@ -136,7 +136,7 @@ fun DashboardScreen(
                     ) {
                         Icon(Icons.Default.FileDownload, contentDescription = "Export", modifier = Modifier.size(14.dp))
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("EXPORT (.PEM)", fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                        Text("تصدير الشهادة", fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
                     }
                 }
             }

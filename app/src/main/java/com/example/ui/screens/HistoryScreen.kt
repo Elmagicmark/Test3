@@ -14,6 +14,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
@@ -21,7 +22,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.local.HttpTransactionEntity
-import com.example.data.local.TargetScopeEntity
 import com.example.ui.components.CyberCard
 import com.example.ui.components.MethodBadge
 import com.example.ui.components.StatusCodeBadge
@@ -31,8 +31,7 @@ import com.example.ui.theme.*
 @Composable
 fun HistoryScreen(
     transactions: List<HttpTransactionEntity>,
-    targetScopes: List<TargetScopeEntity>,
-    filterHistoryByScope: Boolean,
+    targetScopes: List<com.example.data.local.TargetScopeEntity> = emptyList(),
     onDelete: (Long) -> Unit,
     onDeleteBatch: (List<Long>) -> Unit,
     onClearAll: () -> Unit,
@@ -47,26 +46,25 @@ fun HistoryScreen(
     var selectedIds by remember { mutableStateOf(setOf<Long>()) }
     val context = LocalContext.current
 
-    val scopeFilteredList = remember(transactions, targetScopes, filterHistoryByScope) {
-        if (!filterHistoryByScope || targetScopes.isEmpty()) {
-            transactions
-        } else {
-            val inScopePatterns = targetScopes
-                .filter { it.isInScope }
-                .map { it.pattern.trim().lowercase() }
+    val enabledInScopeRules = remember(targetScopes) { targetScopes.filter { it.isEnabled && it.isInScope } }
 
-            transactions.filter { tx ->
-                val urlLower = tx.url.lowercase()
-                inScopePatterns.any { pattern ->
-                    urlLower.contains(pattern) ||
-                    urlLower.contains("*.$pattern")
+    // Apply Filter & Search Logic
+    val filteredList = remember(transactions, searchQuery, selectedMethodFilter, selectedStatusFilter, sortBy, enabledInScopeRules) {
+        transactions.filter { tx ->
+            val matchesScope = if (enabledInScopeRules.isEmpty()) {
+                true
+            } else {
+                enabledInScopeRules.any { scope ->
+                    var cleanPattern = scope.pattern.trim().lowercase()
+                        .removePrefix("http://").removePrefix("https://")
+                        .removePrefix("*.").removePrefix(".")
+                        .replace(".*", "").replace("\\.", ".")
+                        .substringBefore("/").substringBefore(":")
+                    cleanPattern = cleanPattern.trim().trim('.', ' ')
+                    tx.url.lowercase().contains(cleanPattern)
                 }
             }
-        }
-    }
 
-    val filteredList = remember(scopeFilteredList, searchQuery, selectedMethodFilter, selectedStatusFilter, sortBy) {
-        scopeFilteredList.filter { tx ->
             val matchesQuery = searchQuery.isEmpty() || tx.url.contains(searchQuery, ignoreCase = true) || tx.requestBody.contains(searchQuery, ignoreCase = true)
             val matchesMethod = selectedMethodFilter == "ALL" || tx.method.equals(selectedMethodFilter, ignoreCase = true)
             val matchesStatus = when (selectedStatusFilter) {
@@ -76,13 +74,13 @@ fun HistoryScreen(
                 "5xx" -> tx.statusCode in 500..599
                 else -> true
             }
-            matchesQuery && matchesMethod && matchesStatus
+            matchesScope && matchesQuery && matchesMethod && matchesStatus
         }.sortedWith { a, b ->
             when (sortBy) {
                 "OLDEST" -> a.timestamp.compareTo(b.timestamp)
                 "SLOWEST" -> b.responseTimeMs.compareTo(a.responseTimeMs)
                 "STATUS" -> b.statusCode.compareTo(a.statusCode)
-                else -> b.timestamp.compareTo(a.timestamp)
+                else -> b.timestamp.compareTo(a.timestamp) // NEWEST
             }
         }
     }
@@ -93,25 +91,7 @@ fun HistoryScreen(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        if (filterHistoryByScope && targetScopes.isNotEmpty()) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(Color(0xFF003814), RoundedCornerShape(4.dp))
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(Icons.Default.FilterAlt, contentDescription = null, tint = NeonGreen, modifier = Modifier.size(14.dp))
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(
-                    text = "FILTERED BY SCOPE: ${targetScopes.filter { it.isInScope }.size} rule(s)",
-                    fontSize = 10.sp,
-                    fontFamily = FontFamily.Monospace,
-                    color = NeonGreen
-                )
-            }
-        }
-
+        // Search & Filter Bar
         OutlinedTextField(
             value = searchQuery,
             onValueChange = { searchQuery = it },
@@ -126,10 +106,36 @@ fun HistoryScreen(
             textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = OnCyberDark)
         )
 
+        if (enabledInScopeRules.isNotEmpty()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(NeonGreen.copy(alpha = 0.15f))
+                    .border(1.dp, NeonGreen, RoundedCornerShape(6.dp))
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Icon(Icons.Default.FilterAlt, contentDescription = "Scope", tint = NeonGreen, modifier = Modifier.size(14.dp))
+                    Text(
+                        text = "فلتر النطاق فعال (IN-SCOPE ONLY): يتم عرض النطاقات المستهدفة فقط",
+                        color = NeonGreen,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace
+                    )
+                }
+            }
+        }
+
+        // Filter chips row
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
+            // Method Filter Dropdown
             var methodExpanded by remember { mutableStateOf(false) }
             Box(modifier = Modifier.weight(1f)) {
                 OutlinedButton(
@@ -150,6 +156,7 @@ fun HistoryScreen(
                 }
             }
 
+            // Status Filter Dropdown
             var statusExpanded by remember { mutableStateOf(false) }
             Box(modifier = Modifier.weight(1f)) {
                 OutlinedButton(
@@ -170,6 +177,7 @@ fun HistoryScreen(
                 }
             }
 
+            // Sort Dropdown
             var sortExpanded by remember { mutableStateOf(false) }
             Box(modifier = Modifier.weight(1f)) {
                 OutlinedButton(
@@ -191,6 +199,7 @@ fun HistoryScreen(
             }
         }
 
+        // Multi-select and Export action header
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -226,6 +235,7 @@ fun HistoryScreen(
             }
         }
 
+        // List View
         if (filteredList.isEmpty()) {
             CyberCard(modifier = Modifier.fillMaxWidth().weight(1f)) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {

@@ -62,7 +62,6 @@ data class HostSiteMap(
 fun TargetSiteMapScreen(
     transactions: List<HttpTransactionEntity>,
     targetScopes: List<TargetScopeEntity>,
-    filterHistoryByScope: Boolean,
     onSendToRepeater: (String, String, String, String) -> Unit,
     onSelectTransaction: (HttpTransactionEntity) -> Unit,
     modifier: Modifier = Modifier
@@ -73,70 +72,69 @@ fun TargetSiteMapScreen(
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
 
-    val scopeFilteredTransactions = remember(transactions, targetScopes, filterHistoryByScope) {
-        if (!filterHistoryByScope || targetScopes.isEmpty()) {
-            transactions
-        } else {
-            val inScopePatterns = targetScopes
-                .filter { it.isInScope }
-                .map { it.pattern.trim().lowercase() }
+    // Dynamically build Host SiteMap Tree from captured HTTP Transactions + Crawled endpoints
+    val hostMap = remember(transactions, targetScopes) {
+        val map = mutableMapOf<String, HostSiteMap>()
 
-            transactions.filter { tx ->
-                val urlLower = tx.url.lowercase()
-                inScopePatterns.any { pattern ->
-                    urlLower.contains(pattern) ||
-                    urlLower.contains("*.$pattern")
+        val enabledInScopeRules = targetScopes.filter { it.isEnabled && it.isInScope }
+        val hasInScopeRules = enabledInScopeRules.isNotEmpty()
+
+        val isHostOrUrlInScope: (String, String) -> Boolean = { url, host ->
+            if (!hasInScopeRules) {
+                true
+            } else {
+                enabledInScopeRules.any { scope ->
+                    var cleanPattern = scope.pattern.trim().lowercase()
+                        .removePrefix("http://").removePrefix("https://")
+                        .removePrefix("*.").removePrefix(".")
+                        .replace(".*", "").replace("\\.", ".")
+                        .substringBefore("/").substringBefore(":")
+                    cleanPattern = cleanPattern.trim().trim('.', ' ')
+                    val hostClean = host.trim().lowercase().removePrefix("www.")
+                    url.lowercase().contains(cleanPattern) || hostClean.contains(cleanPattern) || cleanPattern.contains(hostClean)
                 }
             }
         }
-    }
 
-    val hostMap = remember(scopeFilteredTransactions, targetScopes) {
-        val map = mutableMapOf<String, HostSiteMap>()
-
+        // Default mock host endpoints for realistic security analysis representation
         val defaultHost = "api.target-app.internal"
-        val defaultMap = HostSiteMap(
-            host = defaultHost,
-            isScopeMatch = true,
-            endpoints = mutableListOf(
-                SiteNode("/v1/auth/login", "POST", 200, false, "application/json"),
-                SiteNode("/v1/users/profile", "GET", 200, false, "application/json"),
-                SiteNode("/v1/telemetry/event", "POST", 202, false, "application/json"),
-                SiteNode("/v1/admin/config", "GET", 403, true, "application/json"),
-                SiteNode("/v2/graphql", "POST", 200, true, "application/json"),
-                SiteNode("/swagger-ui.html", "GET", 200, true, "text/html"),
-                SiteNode("/robots.txt", "GET", 200, true, "text/plain")
+        if (!hasInScopeRules || isHostOrUrlInScope("https://$defaultHost", defaultHost)) {
+            val defaultMap = HostSiteMap(
+                host = defaultHost,
+                isScopeMatch = true,
+                endpoints = mutableListOf(
+                    SiteNode("/v1/auth/login", "POST", 200, false, "application/json"),
+                    SiteNode("/v1/users/profile", "GET", 200, false, "application/json"),
+                    SiteNode("/v1/telemetry/event", "POST", 202, false, "application/json"),
+                    SiteNode("/v1/admin/config", "GET", 403, true, "application/json"),
+                    SiteNode("/v2/graphql", "POST", 200, true, "application/json"),
+                    SiteNode("/swagger-ui.html", "GET", 200, true, "text/html"),
+                    SiteNode("/robots.txt", "GET", 200, true, "text/plain")
+                )
             )
-        )
-        map[defaultHost] = defaultMap
+            map[defaultHost] = defaultMap
+        }
 
-        scopeFilteredTransactions.forEach { tx ->
+        // Process live captured transactions
+        transactions.forEach { tx ->
             try {
                 val uri = URI(tx.url)
                 val host = uri.host ?: "unknown-host"
                 val path = if (uri.path.isNullOrEmpty()) "/" else uri.path
 
-                val isInScope = targetScopes.isEmpty() || targetScopes.any { scope ->
-                    if (scope.isInScope) {
-                        val cleanPattern = scope.pattern.trim().lowercase()
-                            .removePrefix("http://").removePrefix("https://")
-                            .removePrefix("*.").removePrefix(".")
-                            .replace(".*", "").replace("\\.", ".")
-                            .substringBefore("/").substringBefore(":")
-                        tx.url.lowercase().contains(cleanPattern)
-                    } else false
-                }
-
-                val existing = map.getOrPut(host) { HostSiteMap(host, isInScope, mutableListOf()) }
-                if (existing.endpoints.none { it.path == path && it.method == tx.method }) {
-                    existing.endpoints.add(
-                        SiteNode(
-                            path = path,
-                            method = tx.method,
-                            statusCode = tx.statusCode,
-                            isCrawledDiscovered = false
+                val isInScope = isHostOrUrlInScope(tx.url, host)
+                if (isInScope) {
+                    val existing = map.getOrPut(host) { HostSiteMap(host, true, mutableListOf()) }
+                    if (existing.endpoints.none { it.path == path && it.method == tx.method }) {
+                        existing.endpoints.add(
+                            SiteNode(
+                                path = path,
+                                method = tx.method,
+                                statusCode = tx.statusCode,
+                                isCrawledDiscovered = false
+                            )
                         )
-                    )
+                    }
                 }
             } catch (_: Exception) {}
         }
@@ -152,6 +150,7 @@ fun TargetSiteMapScreen(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        // Active Crawler Bar
         CyberCard(borderColor = PurpleNeon) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(
@@ -168,6 +167,24 @@ fun TargetSiteMapScreen(
                             fontWeight = FontWeight.Bold,
                             fontFamily = FontFamily.Monospace
                         )
+                    }
+
+                    if (targetScopes.any { it.isEnabled && it.isInScope }) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(NeonGreen.copy(alpha = 0.15f))
+                                .border(1.dp, NeonGreen, RoundedCornerShape(12.dp))
+                                .padding(horizontal = 8.dp, vertical = 3.dp)
+                        ) {
+                            Text(
+                                text = "SCOPE FILTER ON",
+                                color = NeonGreen,
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
                     }
                 }
 
@@ -254,6 +271,7 @@ fun TargetSiteMapScreen(
             }
         }
 
+        // Site Map Tree View
         CyberCard(borderColor = CyberCyan, modifier = Modifier.weight(1f)) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(
@@ -291,6 +309,7 @@ fun TargetSiteMapScreen(
                                 .background(CyberSurface)
                                 .border(1.dp, CyberBorder, RoundedCornerShape(6.dp))
                         ) {
+                            // Host Row Header
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -359,6 +378,7 @@ fun TargetSiteMapScreen(
                                 )
                             }
 
+                            // Host Endpoints List
                             AnimatedVisibility(visible = isExpanded) {
                                 Column(
                                     modifier = Modifier
@@ -392,8 +412,8 @@ fun TargetSiteMapScreen(
                                                     fontSize = 11.sp,
                                                     fontFamily = FontFamily.Monospace,
                                                     fontWeight = FontWeight.SemiBold,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis
+                                                     maxLines = 1,
+                                                     overflow = TextOverflow.Ellipsis
                                                 )
 
                                                 if (node.isCrawledDiscovered) {

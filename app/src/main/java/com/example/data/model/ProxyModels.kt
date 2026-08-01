@@ -14,7 +14,9 @@ data class ProxySettings(
     val interceptRequests: Boolean = true,
     val interceptResponses: Boolean = true,
     val enforceScopeOnly: Boolean = false,
-    val includeSubdomains: Boolean = true
+    val filterHistoryByScope: Boolean = false,  // ← جديد
+    val includeSubdomains: Boolean = true,
+    val bypassDomains: List<String> = emptyList()
 ) {
     fun shouldInterceptMethod(method: String): Boolean {
         if (interceptMethods.isEmpty()) return true
@@ -23,28 +25,18 @@ data class ProxySettings(
 }
 
 data class ProxyStats(
-    val totalRequests: Int = 0,
-    val interceptedRequests: Int = 0,
     val activeConnections: Int = 0,
-    val bytesTransferred: Long = 0L
+    val totalRequests: Long = 0,
+    val totalBytesTransferred: Long = 0,
+    val lastRequestTimestamp: Long = 0
 )
 
 data class CertificateInfo(
-    val commonName: String = "InterceptX Security CA",
-    val organization: String = "InterceptX Cyber Labs",
-    val serialNumber: String = "7A:93:B4:88:1C:E0:4F:29",
-    val validFrom: String = "2025-01-01 00:00:00 UTC",
-    val validTo: String = "2035-12-31 23:59:59 UTC",
-    val sha256Fingerprint: String = "9B:5E:82:1D:C4:F0:3A:76:88:E2:BB:A4:91:C2:5E:70:A9:C1:DF:8B:33:EE:4D:12:8F:88:9C:2B:10:A8:DF:49",
-    val md5Fingerprint: String = "E4:8A:2F:90:1C:5D:82:77:B1:3C:99:A0:F2:41:88:0B"
-)
-
-enum class HttpMethod {
-    GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS, CONNECT, TRACE
-}
-
-data class KeyValuePair(
-    val key: String,
-    val value: String,
-    val isEnabled: Boolean = true
+    val commonName: String = "InterceptX Security Root CA",
+    val organization: String = "InterceptX Cyber Labs Inc.",
+    val serialNumber: String = "A1B2C3D4E5F6",
+    val validFrom: String = "2026-01-01",
+    val validTo: String = "2036-01-01",
+    val sha256Fingerprint: String = "AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:AA:BB",
+    val md5Fingerprint: String = "AB:CD:EF:12:34:56:78:90:AB:CD:EF:12:34:56:78:90"
 )

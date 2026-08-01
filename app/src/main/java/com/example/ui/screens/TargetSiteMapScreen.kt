@@ -62,6 +62,7 @@ data class HostSiteMap(
 fun TargetSiteMapScreen(
     transactions: List<HttpTransactionEntity>,
     targetScopes: List<TargetScopeEntity>,
+    filterHistoryByScope: Boolean,
     onSendToRepeater: (String, String, String, String) -> Unit,
     onSelectTransaction: (HttpTransactionEntity) -> Unit,
     modifier: Modifier = Modifier
@@ -72,11 +73,27 @@ fun TargetSiteMapScreen(
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
 
-    // Dynamically build Host SiteMap Tree from captured HTTP Transactions + Crawled endpoints
-    val hostMap = remember(transactions, targetScopes) {
+    val scopeFilteredTransactions = remember(transactions, targetScopes, filterHistoryByScope) {
+        if (!filterHistoryByScope || targetScopes.isEmpty()) {
+            transactions
+        } else {
+            val inScopePatterns = targetScopes
+                .filter { it.isInScope }
+                .map { it.pattern.trim().lowercase() }
+
+            transactions.filter { tx ->
+                val urlLower = tx.url.lowercase()
+                inScopePatterns.any { pattern ->
+                    urlLower.contains(pattern) ||
+                    urlLower.contains("*.$pattern")
+                }
+            }
+        }
+    }
+
+    val hostMap = remember(scopeFilteredTransactions, targetScopes) {
         val map = mutableMapOf<String, HostSiteMap>()
 
-        // Default mock host endpoints for realistic security analysis representation
         val defaultHost = "api.target-app.internal"
         val defaultMap = HostSiteMap(
             host = defaultHost,
@@ -93,8 +110,7 @@ fun TargetSiteMapScreen(
         )
         map[defaultHost] = defaultMap
 
-        // Process live captured transactions
-        transactions.forEach { tx ->
+        scopeFilteredTransactions.forEach { tx ->
             try {
                 val uri = URI(tx.url)
                 val host = uri.host ?: "unknown-host"
@@ -136,7 +152,6 @@ fun TargetSiteMapScreen(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // Active Crawler Bar
         CyberCard(borderColor = PurpleNeon) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(
@@ -239,7 +254,6 @@ fun TargetSiteMapScreen(
             }
         }
 
-        // Site Map Tree View
         CyberCard(borderColor = CyberCyan, modifier = Modifier.weight(1f)) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(
@@ -277,7 +291,6 @@ fun TargetSiteMapScreen(
                                 .background(CyberSurface)
                                 .border(1.dp, CyberBorder, RoundedCornerShape(6.dp))
                         ) {
-                            // Host Row Header
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -346,7 +359,6 @@ fun TargetSiteMapScreen(
                                 )
                             }
 
-                            // Host Endpoints List
                             AnimatedVisibility(visible = isExpanded) {
                                 Column(
                                     modifier = Modifier
@@ -380,8 +392,8 @@ fun TargetSiteMapScreen(
                                                     fontSize = 11.sp,
                                                     fontFamily = FontFamily.Monospace,
                                                     fontWeight = FontWeight.SemiBold,
-                                                     maxLines = 1,
-                                                     overflow = TextOverflow.Ellipsis
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
                                                 )
 
                                                 if (node.isCrawledDiscovered) {

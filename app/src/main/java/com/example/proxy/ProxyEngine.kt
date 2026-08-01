@@ -53,67 +53,11 @@ class ProxyEngine {
     }
 
     fun isUrlInScope(url: String, settings: ProxySettings, scopes: List<com.example.data.local.TargetScopeEntity>): Boolean {
-        val enabledScopes = scopes.filter { it.isEnabled }
-        if (enabledScopes.isEmpty()) return true
-
-        // 1. Check if explicitly excluded
-        val isExcluded = enabledScopes.any { scope ->
-            !scope.isInScope && matchesDomainPattern(url, scope.pattern, settings.includeSubdomains)
-        }
-        if (isExcluded) return false
-
-        // 2. Check if matches any in-scope rule
-        val inScopeRules = enabledScopes.filter { it.isInScope }
-        if (inScopeRules.isEmpty()) return true
-
-        return inScopeRules.any { scope ->
-            matchesDomainPattern(url, scope.pattern, settings.includeSubdomains)
-        }
-    }
-
-    private fun cleanDomainPattern(pattern: String): String {
-        var s = pattern.trim().lowercase()
-        s = s.replace("http://", "").replace("https://", "")
-        s = s.replace(".*", "").replace("\\.", ".").replace("*", "")
-        s = s.replace("\\", "").replace("\"", "").replace("'", "")
-        val slashIdx = s.indexOf('/')
-        if (slashIdx != -1) s = s.substring(0, slashIdx)
-        val portIdx = s.indexOf(':')
-        if (portIdx != -1) s = s.substring(0, portIdx)
-        return s.trim().trim('.', ' ')
-    }
-
-    private fun extractHost(url: String): String {
-        if (url.isBlank()) return ""
-        var clean = url.trim().lowercase()
-        clean = clean.replace("http://", "").replace("https://", "")
-        val slashIdx = clean.indexOf('/')
-        if (slashIdx != -1) clean = clean.substring(0, slashIdx)
-        val portIdx = clean.indexOf(':')
-        if (portIdx != -1) clean = clean.substring(0, portIdx)
-        return clean.trim().trim('.', ' ')
+        return com.example.util.ScopeMatcher.isUrlInScope(url, scopes, settings.includeSubdomains)
     }
 
     fun matchesDomainPattern(urlOrHost: String, pattern: String, includeSubdomains: Boolean = true): Boolean {
-        val cleanPattern = cleanDomainPattern(pattern)
-        if (cleanPattern.isEmpty()) return false
-
-        val host = extractHost(urlOrHost)
-        val urlLower = urlOrHost.trim().lowercase()
-
-        // 1. Exact host match
-        if (host == cleanPattern) return true
-
-        // 2. Subdomain match (e.g. api.example.com matches example.com)
-        if (includeSubdomains && host.endsWith(".$cleanPattern")) return true
-
-        // 3. Host contains domain substring
-        if (host.contains(cleanPattern)) return true
-
-        // 4. Raw URL contains domain substring
-        if (urlLower.contains(cleanPattern)) return true
-
-        return false
+        return com.example.util.ScopeMatcher.matchSingleScope(urlOrHost, pattern, includeSubdomains)
     }
 
     fun startProxy(
@@ -591,7 +535,7 @@ class ProxyEngine {
 
         val execHeadersJson = "{" + execHeadersMap.entries.joinToString(",") { "\"${it.key}\":\"${it.value.replace("\"", "\\\"")}\"" } + "}"
 
-        val enforceScope = currentSettings.enforceScopeOnly || hasInScopeRules
+        val enforceScope = currentSettings.enforceScopeOnly
 
         if (inScope || !enforceScope) {
             val tx = HttpTransactionEntity(

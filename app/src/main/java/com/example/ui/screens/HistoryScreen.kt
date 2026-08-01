@@ -15,6 +15,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
@@ -47,22 +48,15 @@ fun HistoryScreen(
     val context = LocalContext.current
 
     val enabledInScopeRules = remember(targetScopes) { targetScopes.filter { it.isEnabled && it.isInScope } }
+    var showOnlyInScope by remember(targetScopes) { mutableStateOf(enabledInScopeRules.isNotEmpty()) }
 
     // Apply Filter & Search Logic
-    val filteredList = remember(transactions, searchQuery, selectedMethodFilter, selectedStatusFilter, sortBy, enabledInScopeRules) {
+    val filteredList = remember(transactions, searchQuery, selectedMethodFilter, selectedStatusFilter, sortBy, targetScopes, showOnlyInScope) {
         transactions.filter { tx ->
-            val matchesScope = if (enabledInScopeRules.isEmpty()) {
+            val matchesScope = if (!showOnlyInScope || enabledInScopeRules.isEmpty()) {
                 true
             } else {
-                enabledInScopeRules.any { scope ->
-                    var cleanPattern = scope.pattern.trim().lowercase()
-                        .removePrefix("http://").removePrefix("https://")
-                        .removePrefix("*.").removePrefix(".")
-                        .replace(".*", "").replace("\\.", ".")
-                        .substringBefore("/").substringBefore(":")
-                    cleanPattern = cleanPattern.trim().trim('.', ' ')
-                    tx.url.lowercase().contains(cleanPattern)
-                }
+                com.example.util.ScopeMatcher.isUrlInScope(tx.url, targetScopes, includeSubdomains = true)
             }
 
             val matchesQuery = searchQuery.isEmpty() || tx.url.contains(searchQuery, ignoreCase = true) || tx.requestBody.contains(searchQuery, ignoreCase = true)
@@ -111,22 +105,40 @@ fun HistoryScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(6.dp))
-                    .background(NeonGreen.copy(alpha = 0.15f))
-                    .border(1.dp, NeonGreen, RoundedCornerShape(6.dp))
+                    .background(if (showOnlyInScope) NeonGreen.copy(alpha = 0.15f) else OnCyberSurfaceMuted.copy(alpha = 0.15f))
+                    .border(1.dp, if (showOnlyInScope) NeonGreen else OnCyberSurfaceMuted, RoundedCornerShape(6.dp))
+                    .clickable { showOnlyInScope = !showOnlyInScope }
                     .padding(horizontal = 10.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Icon(Icons.Default.FilterAlt, contentDescription = "Scope", tint = NeonGreen, modifier = Modifier.size(14.dp))
+                Row(
+                    modifier = Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(
+                        Icons.Default.FilterAlt,
+                        contentDescription = "Scope",
+                        tint = if (showOnlyInScope) NeonGreen else OnCyberSurfaceMuted,
+                        modifier = Modifier.size(16.dp)
+                    )
                     Text(
-                        text = "فلتر النطاق فعال (IN-SCOPE ONLY): يتم عرض النطاقات المستهدفة فقط",
-                        color = NeonGreen,
+                        text = if (showOnlyInScope)
+                            "فلتر النطاق (IN-SCOPE ONLY): يتم عرض الترافيك المستهدف فقط (Burp Style)"
+                        else
+                            "فلتر النطاق متوقف: يتم عرض كافة الطلبات (اضغط لتفعيل فلتر النطاق)",
+                        color = if (showOnlyInScope) NeonGreen else OnCyberSurfaceMuted,
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
                         fontFamily = FontFamily.Monospace
                     )
                 }
+                Switch(
+                    checked = showOnlyInScope,
+                    onCheckedChange = { showOnlyInScope = it },
+                    modifier = Modifier.scale(0.7f)
+                )
             }
         }
 

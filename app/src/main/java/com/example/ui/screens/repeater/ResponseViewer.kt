@@ -186,7 +186,10 @@ fun ResponseViewer(
                                     .verticalScroll(rememberScrollState())
                                     .horizontalScroll(rememberScrollState())
                             ) {
-                                PrettyJsonViewer(jsonString = responseBody)
+                                PrettyBodyViewer(
+                                    body = responseBody,
+                                    headersJson = responseHeadersJson
+                                )
                             }
                         }
 

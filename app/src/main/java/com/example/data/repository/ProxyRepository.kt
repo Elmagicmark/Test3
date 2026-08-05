@@ -246,13 +246,13 @@ class ProxyRepository(
 
     suspend fun fetchAndInspectResponse(id: Long, method: String, url: String, headersJson: String, body: String): Unit = withContext(Dispatchers.IO) {
         val headersMap = parseHeadersJson(headersJson)
-        val (code, respBody) = executeRawHttpRequest(method, url, headersMap, body)
-        val defaultRespHeaders = "{\"Content-Type\":\"application/json; charset=utf-8\",\"Server\":\"InterceptX-Engine\"}"
+        val (code, respHeadersMap, respBody) = executeRawHttpRequest(method, url, headersMap, body)
+        val respHeadersJson = "{" + respHeadersMap.entries.joinToString(",") { "\"${it.key}\":\"${it.value.replace("\"", "\\\"")}\"" } + "}"
         val updatedEntity = InterceptedRequestEntity(
             id = id,
             method = code.toString(),
             url = url,
-            headersJson = defaultRespHeaders,
+            headersJson = respHeadersJson,
             body = respBody,
             isResponse = true,
             statusCode = code
@@ -354,7 +354,7 @@ class ProxyRepository(
         url: String,
         headersMap: Map<String, String>,
         bodyString: String
-    ): Pair<Int, String> = withContext(Dispatchers.IO) {
+    ): Triple<Int, Map<String, String>, String> = withContext(Dispatchers.IO) {
         try {
             val settings = _proxySettings.value
             val clientBuilder = OkHttpClient.Builder()
@@ -379,7 +379,7 @@ class ProxyRepository(
 
             val reqBuilder = Request.Builder().url(url)
             headersMap.forEach { (k, v) ->
-                if (k.isNotBlank()) reqBuilder.addHeader(k, v)
+                if (k.isNotBlank() && !k.equals("Host", ignoreCase = true)) reqBuilder.addHeader(k, v)
             }
 
             val reqBody = if (method in listOf("POST", "PUT", "PATCH", "DELETE") && bodyString.isNotBlank()) {
@@ -393,6 +393,10 @@ class ProxyRepository(
 
             client.newCall(request).execute().use { response ->
                 val code = response.code
+                val respHeaderMap = mutableMapOf<String, String>()
+                response.headers.forEach { pair ->
+                    respHeaderMap[pair.first] = pair.second
+                }
                 var rawBytes = response.body?.bytes() ?: byteArrayOf()
                 val encoding = response.header("Content-Encoding")
                 if (encoding?.contains("gzip", ignoreCase = true) == true && rawBytes.isNotEmpty()) {
@@ -405,10 +409,10 @@ class ProxyRepository(
                     } catch (_: Exception) {}
                 }
                 val respBody = String(rawBytes, Charsets.UTF_8)
-                Pair(code, respBody)
+                Triple(code, respHeaderMap, respBody)
             }
         } catch (e: Exception) {
-            Pair(500, "Error executing request: ${e.localizedMessage ?: "Unknown error"}")
+            Triple(500, mapOf("Content-Type" to "text/plain"), "Error executing request: ${e.localizedMessage ?: "Unknown error"}")
         }
     }
 }

@@ -296,8 +296,7 @@ fun HistoryScreen(
                                 Text(
                                     text = tx.url,
                                     color = OnCyberDark,
-                                    fontSize = 10.sp,
-                                    maxLines = 1,
+                                    fontSize = 10.5.sp,
                                     fontFamily = FontFamily.Monospace
                                 )
                             }

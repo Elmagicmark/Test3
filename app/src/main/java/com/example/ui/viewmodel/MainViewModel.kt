@@ -285,12 +285,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 bodyString = tab.body
             )
             val status = rawResp.first
-            val responseBody = rawResp.second
+            val respHeadersMap = rawResp.second
+            val responseBody = rawResp.third
             val elapsed = System.currentTimeMillis() - startTime
+            val respHeadersJson = "{" + respHeadersMap.entries.joinToString(",") { "\"${it.key}\":\"${it.value.replace("\"", "\\\"")}\"" } + "}"
             val updatedTab = tab.copy(
                 lastResponseStatus = status,
                 lastResponseBody = responseBody,
-                lastResponseHeadersJson = "{\"Server\":\"InterceptX-Engine/1.0\",\"Content-Type\":\"application/json\",\"Date\":\"2026-07-25\"}",
+                lastResponseHeadersJson = respHeadersJson,
                 lastResponseTimeMs = elapsed
             )
             repository.updateRepeaterTab(updatedTab)
@@ -314,8 +316,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 bodyString = body
             )
             val status = rawResp.first
-            val responseBody = rawResp.second
+            val respHeadersMap = rawResp.second
+            val responseBody = rawResp.third
             val elapsed = System.currentTimeMillis() - startTime
+            val respHeadersJson = "{" + respHeadersMap.entries.joinToString(",") { "\"${it.key}\":\"${it.value.replace("\"", "\\\"")}\"" } + "}"
             
             // Save transaction log
             repository.saveTransaction(
@@ -326,12 +330,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     responseTimeMs = elapsed,
                     requestHeadersJson = headersJson,
                     requestBody = body,
-                    responseHeadersJson = "{\"Server\":\"InterceptX-Composer\",\"Content-Type\":\"text/plain\"}",
+                    responseHeadersJson = respHeadersJson,
                     responseBody = responseBody,
                     bytesTransferred = (body.length + responseBody.length).toLong()
                 )
             )
-
             onResult(status, responseBody, elapsed)
         }
     }

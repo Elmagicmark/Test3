@@ -12,7 +12,7 @@ data class ProxySettings(
     val http2Enabled: Boolean = true,
     val interceptMethods: Set<String> = setOf("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "CONNECT"),
     val interceptRequests: Boolean = true,
-    val interceptResponses: Boolean = true,
+    val interceptResponses: Boolean = false,
     val enforceScopeOnly: Boolean = false,
     val includeSubdomains: Boolean = true
 ) {

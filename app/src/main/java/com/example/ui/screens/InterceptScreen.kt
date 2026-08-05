@@ -34,6 +34,7 @@ import com.example.data.local.InterceptedRequestEntity
 import com.example.ui.components.CyberCard
 import com.example.ui.components.MethodBadge
 import com.example.ui.screens.repeater.PrettyJsonViewer
+import com.example.ui.screens.repeater.PrettyBodyViewer
 import com.example.ui.theme.*
 import java.net.URLDecoder
 import java.net.URLEncoder
@@ -502,7 +503,10 @@ fun InterceptScreen(
                                     .verticalScroll(rememberScrollState())
                                     .horizontalScroll(rememberScrollState())
                             ) {
-                                PrettyJsonViewer(jsonString = editableBody)
+                                PrettyBodyViewer(
+                                    body = editableBody,
+                                    headersJson = editableHeaders
+                                )
                             }
                         }
 

@@ -121,8 +121,7 @@ fun HistoryPanel(
                                 text = tx.url,
                                 color = OnCyberDark,
                                 fontSize = 10.sp,
-                                fontFamily = FontFamily.Monospace,
-                                maxLines = 1
+                                fontFamily = FontFamily.Monospace
                             )
                             Text(
                                 text = "${tx.responseTimeMs} ms • ${tx.bytesTransferred} B",

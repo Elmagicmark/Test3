@@ -354,6 +354,7 @@ class MainActivity : ComponentActivity() {
                         composable(NavRoutes.REPEATER) {
                             RepeaterScreen(
                                 tabs = repeaterTabs,
+                                historyTransactions = transactions,
                                 onUpdateTab = { mainViewModel.updateRepeaterTab(it) },
                                 onDeleteTab = { mainViewModel.deleteRepeaterTab(it) },
                                 onCreateTab = {

@@ -377,9 +377,18 @@ class ProxyRepository(
 
             val client = clientBuilder.build()
 
-            val reqBuilder = Request.Builder().url(url)
+            val formattedUrl = when {
+                url.trim().startsWith("http://", ignoreCase = true) || url.trim().startsWith("https://", ignoreCase = true) -> url.trim()
+                url.isBlank() -> "http://localhost"
+                else -> "https://${url.trim()}"
+            }
+            val reqBuilder = Request.Builder().url(formattedUrl)
             headersMap.forEach { (k, v) ->
-                if (k.isNotBlank() && !k.equals("Host", ignoreCase = true)) reqBuilder.addHeader(k, v)
+                if (k.isNotBlank() && !k.equals("Host", ignoreCase = true)) {
+                    try {
+                        reqBuilder.addHeader(k.trim(), v)
+                    } catch (_: Exception) {}
+                }
             }
 
             val reqBody = if (method in listOf("POST", "PUT", "PATCH", "DELETE") && bodyString.isNotBlank()) {

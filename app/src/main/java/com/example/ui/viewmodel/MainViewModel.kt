@@ -277,26 +277,34 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun executeRepeaterRequest(tab: RepeaterTabEntity, onResult: (Int, String) -> Unit) {
         viewModelScope.launch {
-            val startTime = System.currentTimeMillis()
-            val rawResp = repository.executeRawHttpRequest(
-                method = tab.method,
-                url = tab.url,
-                headersMap = parseJsonToMap(tab.headersJson),
-                bodyString = tab.body
-            )
-            val status = rawResp.first
-            val respHeadersMap = rawResp.second
-            val responseBody = rawResp.third
-            val elapsed = System.currentTimeMillis() - startTime
-            val respHeadersJson = "{" + respHeadersMap.entries.joinToString(",") { "\"${it.key}\":\"${it.value.replace("\"", "\\\"")}\"" } + "}"
-            val updatedTab = tab.copy(
-                lastResponseStatus = status,
-                lastResponseBody = responseBody,
-                lastResponseHeadersJson = respHeadersJson,
-                lastResponseTimeMs = elapsed
-            )
-            repository.updateRepeaterTab(updatedTab)
-            onResult(status, responseBody)
+            try {
+                val startTime = System.currentTimeMillis()
+                val rawResp = repository.executeRawHttpRequest(
+                    method = tab.method,
+                    url = tab.url,
+                    headersMap = parseJsonToMap(tab.headersJson),
+                    bodyString = tab.body
+                )
+                val status = rawResp.first
+                val respHeadersMap = rawResp.second
+                val responseBody = rawResp.third
+                val elapsed = System.currentTimeMillis() - startTime
+                val respHeadersJson = try {
+                    org.json.JSONObject(respHeadersMap as Map<*, *>).toString()
+                } catch (_: Exception) {
+                    "{}"
+                }
+                val updatedTab = tab.copy(
+                    lastResponseStatus = status,
+                    lastResponseBody = responseBody,
+                    lastResponseHeadersJson = respHeadersJson,
+                    lastResponseTimeMs = elapsed
+                )
+                repository.updateRepeaterTab(updatedTab)
+                onResult(status, responseBody)
+            } catch (e: Exception) {
+                onResult(500, "Error: ${e.localizedMessage ?: "Unknown error"}")
+            }
         }
     }
 
@@ -308,55 +316,71 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         onResult: (Int, String, Long) -> Unit
     ) {
         viewModelScope.launch {
-            val startTime = System.currentTimeMillis()
-            val rawResp = repository.executeRawHttpRequest(
-                method = method,
-                url = url,
-                headersMap = parseJsonToMap(headersJson),
-                bodyString = body
-            )
-            val status = rawResp.first
-            val respHeadersMap = rawResp.second
-            val responseBody = rawResp.third
-            val elapsed = System.currentTimeMillis() - startTime
-            val respHeadersJson = "{" + respHeadersMap.entries.joinToString(",") { "\"${it.key}\":\"${it.value.replace("\"", "\\\"")}\"" } + "}"
-            
-            // Save transaction log
-            repository.saveTransaction(
-                HttpTransactionEntity(
+            try {
+                val startTime = System.currentTimeMillis()
+                val rawResp = repository.executeRawHttpRequest(
                     method = method,
                     url = url,
-                    statusCode = status,
-                    responseTimeMs = elapsed,
-                    requestHeadersJson = headersJson,
-                    requestBody = body,
-                    responseHeadersJson = respHeadersJson,
-                    responseBody = responseBody,
-                    bytesTransferred = (body.length + responseBody.length).toLong()
+                    headersMap = parseJsonToMap(headersJson),
+                    bodyString = body
                 )
-            )
-            onResult(status, responseBody, elapsed)
+                val status = rawResp.first
+                val respHeadersMap = rawResp.second
+                val responseBody = rawResp.third
+                val elapsed = System.currentTimeMillis() - startTime
+                val respHeadersJson = try {
+                    org.json.JSONObject(respHeadersMap as Map<*, *>).toString()
+                } catch (_: Exception) {
+                    "{}"
+                }
+                
+                // Save transaction log
+                repository.saveTransaction(
+                    HttpTransactionEntity(
+                        method = method,
+                        url = url,
+                        statusCode = status,
+                        responseTimeMs = elapsed,
+                        requestHeadersJson = headersJson,
+                        requestBody = body,
+                        responseHeadersJson = respHeadersJson,
+                        responseBody = responseBody,
+                        bytesTransferred = (body.length + responseBody.length).toLong()
+                    )
+                )
+                onResult(status, responseBody, elapsed)
+            } catch (e: Exception) {
+                onResult(500, "Error: ${e.localizedMessage ?: "Unknown error"}", 0L)
+            }
         }
     }
 
     private fun parseJsonToMap(json: String): Map<String, String> {
+        if (json.isBlank()) return emptyMap()
         return try {
             val map = mutableMapOf<String, String>()
-            if (json.trim().startsWith("{") && json.trim().endsWith("}")) {
-                val cleaned = json.trim().substring(1, json.trim().length - 1)
-                val pairs = cleaned.split(",")
-                for (pair in pairs) {
-                    val kv = pair.split(":")
-                    if (kv.size >= 2) {
-                        val k = kv[0].replace("\"", "").trim()
-                        val v = kv[1].replace("\"", "").trim()
-                        if (k.isNotEmpty()) map[k] = v
-                    }
-                }
+            val obj = org.json.JSONObject(json)
+            val keys = obj.keys()
+            while (keys.hasNext()) {
+                val k = keys.next()
+                map[k] = obj.optString(k, "")
             }
             map
         } catch (e: Exception) {
-            emptyMap()
+            try {
+                val map = mutableMapOf<String, String>()
+                json.lines().forEach { line ->
+                    val idx = line.indexOf(':')
+                    if (idx > 0) {
+                        val k = line.substring(0, idx).trim().removeSurrounding("\"")
+                        val v = line.substring(idx + 1).trim().removeSurrounding("\"")
+                        if (k.isNotEmpty()) map[k] = v
+                    }
+                }
+                map
+            } catch (_: Exception) {
+                emptyMap()
+            }
         }
     }
 }

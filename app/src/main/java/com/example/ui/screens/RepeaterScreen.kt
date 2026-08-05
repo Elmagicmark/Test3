@@ -166,9 +166,7 @@ fun RepeaterScreen(
                     } else {
                         // Vertical Stacked Layout (Reqable Mobile Style)
                         Column(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .verticalScroll(rememberScrollState()),
+                            modifier = Modifier.fillMaxSize(),
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             RequestEditor(
@@ -186,14 +184,20 @@ fun RepeaterScreen(
                                 onDuplicateTab = {
                                     onUpdateTab(activeTab)
                                     onCreateTab()
-                                }
+                                },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxWidth()
                             )
 
                             ResponseViewer(
                                 statusCode = activeTab.lastResponseStatus,
                                 responseTimeMs = activeTab.lastResponseTimeMs,
                                 responseHeadersJson = activeTab.lastResponseHeadersJson,
-                                responseBody = activeTab.lastResponseBody
+                                responseBody = activeTab.lastResponseBody,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxWidth()
                             )
                         }
                     }

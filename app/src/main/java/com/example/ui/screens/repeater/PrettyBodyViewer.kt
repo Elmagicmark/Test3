@@ -85,8 +85,6 @@ fun PrettyBodyViewer(
                         .fillMaxSize()
                         .background(CyberDarkBg)
                         .padding(8.dp)
-                        .verticalScroll(rememberScrollState())
-                        .horizontalScroll(rememberScrollState())
                 ) {
                     Text(
                         text = body,
@@ -117,8 +115,7 @@ private fun FormUrlEncodedViewer(body: String) {
         modifier = Modifier
             .fillMaxSize()
             .background(CyberDarkBg)
-            .padding(8.dp)
-            .verticalScroll(rememberScrollState()),
+            .padding(8.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
         params.forEach { (key, value) ->

@@ -60,7 +60,10 @@ fun ResponseViewer(
         borderColor = NeonGreen,
         backgroundColor = CyberSurface
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
             // Response Top Toolbar / Status Info Bar
             Row(
                 modifier = Modifier.fillMaxWidth(),

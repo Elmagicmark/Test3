@@ -151,7 +151,6 @@ fun RepeaterScreen(
                                 modifier = Modifier
                                     .weight(1f)
                                     .fillMaxHeight()
-                                    .verticalScroll(rememberScrollState())
                             )
 
                             ResponseViewer(
@@ -162,7 +161,6 @@ fun RepeaterScreen(
                                 modifier = Modifier
                                     .weight(1f)
                                     .fillMaxHeight()
-                                    .verticalScroll(rememberScrollState())
                             )
                         }
                     } else {

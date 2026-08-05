@@ -219,11 +219,13 @@ fun ResponseViewer(
                             if (parsedHeaders.isEmpty()) {
                                 Text("No headers present", color = OnCyberSurfaceMuted, fontFamily = FontFamily.Monospace, fontSize = 10.sp)
                             } else {
-                                LazyColumn(
-                                    modifier = Modifier.fillMaxSize(),
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .verticalScroll(rememberScrollState()),
                                     verticalArrangement = Arrangement.spacedBy(4.dp)
                                 ) {
-                                    items(parsedHeaders.toList()) { (key, value) ->
+                                    parsedHeaders.forEach { (key, value) ->
                                         Row(
                                             modifier = Modifier
                                                 .fillMaxWidth()
